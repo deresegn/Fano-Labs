@@ -1,0 +1,125 @@
+.BackendConnection-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background-color: #1e1e1e;
+  color: #ffffff;
+}
+
+.BackendConnection-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #3e3e42;
+  border-top: 4px solid #007acc;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.BackendConnection-debug {
+  font-size: 0.8rem;
+  color: #888888;
+  margin-top: 0.5rem;
+}
+
+.BackendConnection-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background-color: #1e1e1e;
+  color: #ffffff;
+  padding: 2rem;
+}
+
+.BackendConnection-error-content {
+  max-width: 600px;
+  text-align: center;
+  background-color: #2d2d30;
+  padding: 2rem;
+  border-radius: 8px;
+  border: 1px solid #3e3e42;
+}
+
+.BackendConnection-error-content h2 {
+  color: #ff6b6b;
+  margin-bottom: 1rem;
+}
+
+.BackendConnection-error-content p {
+  color: #cccccc;
+  margin-bottom: 1.5rem;
+}
+
+.BackendConnection-error-details {
+  background-color: #3e3e42;
+  padding: 1rem;
+  border-radius: 4px;
+  margin: 1rem 0;
+  text-align: left;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.9rem;
+}
+
+.BackendConnection-steps {
+  text-align: left;
+  margin: 1.5rem 0;
+}
+
+.BackendConnection-steps h3 {
+  color: #ffffff;
+  margin-bottom: 1rem;
+}
+
+.BackendConnection-steps ol {
+  color: #cccccc;
+  line-height: 1.6;
+}
+
+.BackendConnection-steps li {
+  margin-bottom: 0.5rem;
+}
+
+.BackendConnection-steps code {
+  background-color: #3e3e42;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  color: #ffffff;
+}
+
+.BackendConnection-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
+.BackendConnection-retry-btn {
+  background-color: #007acc;
+  color: #ffffff;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.BackendConnection-retry-btn:hover {
+  background-color: #005a9e;
+}
+
+.BackendConnection-success {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+} 

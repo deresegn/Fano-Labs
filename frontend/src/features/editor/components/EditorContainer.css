@@ -1,0 +1,7 @@
+.EditorContainer {
+  flex: 1;
+  height: calc(100vh - 120px);
+  border: 1px solid #3e3e42;
+  border-radius: 4px;
+  overflow: hidden;
+} 

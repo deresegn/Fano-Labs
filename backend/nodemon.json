@@ -1,0 +1,6 @@
+{
+  "watch": ["src"],
+  "ext": "ts json",
+  "ignore": ["node_modules/**", "dist/**", ".env", "*.log", "*.map"],
+  "delay": "200"
+}
