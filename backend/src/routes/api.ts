@@ -33,11 +33,13 @@ router.post('/generate', async (req, res) => {
       await genOpenAI({ model, prompt, stream });
       return res.status(501).json({ error: 'openai_not_implemented' });
     }
-    // For Ollama, steer the LLM to return code only
+    // For Ollama, steer the LLM to return code only, gated by explicit markers
     const langPart = language ? ` in ${language}` : '';
+    const startToken = '<<<JS\n';
+    const endToken = '\n>>>';
     const systemInstruction =
-      `You are a senior coding assistant. Return ONLY raw${langPart} code with no explanations, no markdown fences, and no HTML.`;
-    const steeredPrompt = `${systemInstruction}\n\n${prompt}`;
+      `You are a senior coding assistant. Return ONLY raw${langPart} code with no explanations, no markdown fences, and no HTML. Enclose ONLY the code between ${startToken.trim()} and ${endToken.trim()}.`;
+    const steeredPrompt = `${startToken}${systemInstruction}\n\n${prompt}${endToken}`;
 
     // Be explicit with deterministic low-temp options to avoid long thinking
     console.log('→ calling Ollama', { model, timeoutMs: 120000 });
@@ -50,7 +52,7 @@ router.post('/generate', async (req, res) => {
           temperature: 0.1,
           top_p: 0.9,
           num_predict: 64,
-          stop: ["```", "</details>", "</summary>"]
+          stop: ["```", "</details>", "</summary>", endToken.trim()]
         }
       },
       { timeoutMs: 120000 }
