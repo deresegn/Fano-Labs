@@ -2,34 +2,435 @@
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background-color: #1e1e1e;
-  color: #ffffff;
+  background: #18191f;
+  color: #f1f4ff;
+  font-family: "Segoe UI", "SF Pro Text", sans-serif;
 }
 
-.App-header {
-  background-color: #2d2d30;
-  padding: 1rem 2rem;
-  border-bottom: 1px solid #3e3e42;
+.MenuBar {
+  height: 34px;
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 18px;
+  padding: 0 14px;
+  border-bottom: 1px solid #2b2f3c;
+  background: #111318;
+  color: #c4c9d9;
+  user-select: none;
 }
 
-.App-header h1 {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
+.MenuBar span {
+  font-size: 13px;
+  cursor: default;
 }
 
-.App-header p {
-  margin: 0;
-  color: #cccccc;
-  font-size: 0.9rem;
-}
-
-.App-main {
+.Shell {
   flex: 1;
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 0;
+}
+
+.LeftPane {
+  border-right: 1px solid #2b2f3c;
+  background: #14161d;
   display: flex;
   flex-direction: column;
+  min-width: 220px;
+}
+
+.PaneHeader {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #2b2f3c;
+  padding: 0 12px;
+  background: #171a23;
+}
+
+.PaneHeader strong {
+  font-size: 12px;
+  color: #c0c7dd;
+  letter-spacing: 0.04em;
+}
+
+.PaneContent {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 6px 16px 6px;
+}
+
+.Tree-list {
+  list-style: none;
+  margin: 0;
+  padding-left: 10px;
+}
+
+.Tree-node {
+  width: 100%;
+  background: transparent;
+  color: #ccd3ea;
+  border: none;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.Tree-node:hover {
+  background: #242a3a;
+}
+
+.Tree-node.active {
+  background: #2b3550;
+}
+
+.Tree-node-icon {
+  color: #7d8aae;
+  width: 12px;
+}
+
+.Tree-node-name {
+  font-size: 12px;
   overflow: hidden;
-} 
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.CenterPane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.EditorContextBar {
+  height: 44px;
+  border-bottom: 1px solid #2b2f3c;
+  background: #171a23;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+}
+
+.FileBadge {
+  font-size: 12px;
+  color: #d2daf5;
+  background: #252c3f;
+  border: 1px solid #3b4663;
+  border-radius: 6px;
+  padding: 4px 8px;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.CenterActions {
+  display: flex;
+  gap: 8px;
+}
+
+.CenterActions button,
+.RightHeader button {
+  border: 1px solid #3c4869;
+  background: #242b3f;
+  color: #d9e3ff;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.CenterActions button:hover,
+.RightHeader button:hover {
+  background: #2f3850;
+}
+
+.EditorHost {
+  flex: 1;
+  min-height: 0;
+}
+
+.TerminalPane {
+  height: 180px;
+  border-top: 1px solid #2b2f3c;
+  background: #0f1117;
+  display: flex;
+  flex-direction: column;
+}
+
+.TerminalTabs {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 12px;
+  border-bottom: 1px solid #262b38;
+}
+
+.TerminalTabs span {
+  color: #8e98b7;
+  font-size: 12px;
+}
+
+.TerminalTabs span.active {
+  color: #d2ddff;
+}
+
+.TerminalBody {
+  padding: 10px 12px;
+  color: #a7ffb5;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+}
+
+.RightResizer {
+  width: 6px;
+  cursor: col-resize;
+  background: #11141d;
+  border-left: 1px solid #2b2f3c;
+  border-right: 1px solid #2b2f3c;
+}
+
+.RightPane {
+  min-width: 280px;
+  max-width: 620px;
+  border-left: 1px solid #2b2f3c;
+  background: #131620;
+  display: flex;
+  flex-direction: column;
+}
+
+.ThreadList {
+  max-height: 150px;
+  overflow: auto;
+  border-bottom: 1px solid #2b2f3c;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ThreadItem {
+  border: 1px solid #2f3850;
+  background: #1d2334;
+  color: #d6def7;
+  border-radius: 6px;
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ThreadItem.active {
+  background: #2a3555;
+  border-color: #40527f;
+}
+
+.ChatMessages {
+  flex: 1;
+  overflow: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ChatBubble {
+  border: 1px solid #30374c;
+  border-radius: 8px;
+  padding: 8px;
+  max-width: 100%;
+}
+
+.ChatBubble.user {
+  background: #233b6b;
+  border-color: #32518d;
+}
+
+.ChatBubble.assistant {
+  background: #1f2536;
+}
+
+.ChatBubble pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #eef3ff;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+}
+
+.TypingDots {
+  color: #8fa0cb;
+  font-size: 12px;
+}
+
+.ChatInputZone {
+  border-top: 1px solid #2b2f3c;
+  background: #171a24;
+  padding: 10px;
+}
+
+.ChatInputRow {
+  display: grid;
+  grid-template-columns: 160px 1fr 72px;
+  gap: 8px;
+  align-items: end;
+}
+
+.ChatInputRow select,
+.ChatInputRow textarea,
+.ChatInputRow button {
+  border-radius: 6px;
+  border: 1px solid #394462;
+  background: #232a3d;
+  color: #edf2ff;
+  font-size: 12px;
+}
+
+.ChatInputRow select,
+.ChatInputRow button {
+  height: 36px;
+  padding: 0 10px;
+}
+
+.ChatInputRow textarea {
+  min-height: 54px;
+  max-height: 120px;
+  resize: vertical;
+  padding: 8px;
+}
+
+.ChatInputRow button {
+  cursor: pointer;
+}
+
+.StatusLine {
+  margin-top: 8px;
+  border-top: 1px solid #2e3548;
+  padding-top: 6px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #93a0c6;
+  font-size: 11px;
+}
+
+.WelcomeRoot {
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+}
+
+.WelcomeCenter {
+  width: min(700px, 96%);
+  border: 1px solid #2e354a;
+  border-radius: 14px;
+  background: #111520;
+  padding: 26px;
+  text-align: center;
+}
+
+.WelcomeCenter h1 {
+  margin: 0 0 8px 0;
+}
+
+.WelcomeCenter p {
+  margin: 0;
+  color: #9ba8cd;
+}
+
+.WelcomeActions {
+  margin-top: 20px;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.PrimaryBtn,
+.SecondaryBtn {
+  border-radius: 8px;
+  padding: 10px 16px;
+  border: 1px solid #40507a;
+  background: #29385f;
+  color: #e6edff;
+  cursor: pointer;
+}
+
+.SecondaryBtn {
+  border-color: #35405c;
+  background: #1d2438;
+}
+
+.SecondaryBtn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.RecentProjects {
+  margin-top: 22px;
+  text-align: left;
+}
+
+.RecentProjects h3 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  color: #c7d2f4;
+}
+
+.MutedText {
+  color: #8793b7;
+  font-size: 12px;
+}
+
+.RecentProjects ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.RecentProjects li button {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #2f3952;
+  background: #1b2234;
+  border-radius: 8px;
+  color: #e4ebff;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.RecentProjects li button span {
+  color: #8c9bc3;
+  font-size: 11px;
+}
+
+@media (max-width: 980px) {
+  .Shell {
+    grid-template-columns: 1fr;
+  }
+
+  .LeftPane,
+  .RightResizer,
+  .RightPane {
+    display: none;
+  }
+
+  .ChatInputRow {
+    grid-template-columns: 1fr;
+  }
+}
+

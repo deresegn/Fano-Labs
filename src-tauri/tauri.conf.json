@@ -5,7 +5,7 @@
   "identifier": "com.fano.labs",
   "build": {
     "beforeBuildCommand": "npm run build",
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run dev:frontend",
     "frontendDist": "../frontend/dist",
     "devUrl": "http://localhost:5173"
   },
