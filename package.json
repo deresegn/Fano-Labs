@@ -5,7 +5,7 @@
   "main": "backend/server.ts",
   "scripts": {
     "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
-    "dev:backend": "tsx watch backend/server.ts",
+    "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && vite",
     "build": "npm run build:frontend",
     "build:frontend": "cd frontend && vite build",

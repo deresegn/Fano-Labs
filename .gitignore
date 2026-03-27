@@ -9,12 +9,19 @@ dist/
 
 # Tauri / Rust
 src-tauri/target/
+src-tauri/target/.rustc_info.json
 src-tauri/**/.fingerprint/
 src-tauri/**/build/
 src-tauri/**/CMakeFiles/
 src-tauri/**/CMakeCache.txt
 src-tauri/**/*.pdb
 src-tauri/**/*.dSYM/
+src-tauri/icons/android/
+src-tauri/icons/ios/
+src-tauri/icons/64x64.png
+src-tauri/icons/StoreLogo.png
+src-tauri/icons/Square*Logo.png
+src-tauri/gen/schemas/windows-schema.json
 
 # Editor
 .idea/
