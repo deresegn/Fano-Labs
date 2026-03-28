@@ -42,24 +42,30 @@ async function fetchOllamaModels(): Promise<Array<{id:string;name:string;descrip
 }
 
 async function nativeOllamaModels(): Promise<Array<{id:string;name:string;description?:string}>> {
-  if (!isTauriRuntime()) return [];
-  const names = await invoke<string[]>('list_local_models');
-  if (!Array.isArray(names)) return [];
-  return names
-    .map((name) => String(name || '').trim())
-    .filter(Boolean)
-    .map((id) => ({ id, name: id, description: 'Local Ollama' }));
+  try {
+    const names = await invoke<string[]>('list_local_models');
+    if (!Array.isArray(names)) return [];
+    return names
+      .map((name) => String(name || '').trim())
+      .filter(Boolean)
+      .map((id) => ({ id, name: id, description: 'Local Ollama' }));
+  } catch {
+    return [];
+  }
 }
 
 async function nativeOllamaGenerate(req: GenReq): Promise<string> {
-  if (!isTauriRuntime()) throw new Error('native_ollama_unavailable');
-  const out = await invoke<string>('generate_with_ollama', {
-    prompt: req.prompt,
-    model: req.model ?? 'qwen2.5-coder:0.5b'
-  });
-  const text = String(out || '').trim();
-  if (!text) throw new Error('empty_native_ollama_response');
-  return text;
+  try {
+    const out = await invoke<string>('generate_with_ollama', {
+      prompt: req.prompt,
+      model: req.model ?? 'qwen2.5-coder:0.5b'
+    });
+    const text = String(out || '').trim();
+    if (!text) throw new Error('empty_native_ollama_response');
+    return text;
+  } catch {
+    throw new Error('native_ollama_unavailable');
+  }
 }
 
 export async function generateCode(req: GenReq): Promise<GenRes> {
@@ -117,14 +123,8 @@ export async function getAvailableModels(): Promise<Array<{id:string;name:string
   try {
     const unique = new Map<string, {id:string;name:string;description?:string}>();
 
-    if (isTauriRuntime()) {
-      try {
-        const native = await nativeOllamaModels();
-        native.forEach((m) => unique.set(m.id, m));
-      } catch {
-        // ignore
-      }
-    }
+    const native = await nativeOllamaModels();
+    native.forEach((m) => unique.set(m.id, m));
 
     if (USE_OLLAMA) {
       if (unique.size > 0) return Array.from(unique.values());
