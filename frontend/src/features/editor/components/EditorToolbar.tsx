@@ -11,6 +11,7 @@ interface EditorToolbarProps {
   onGenerate: (prompt: string) => Promise<boolean>;
   isInlineSuggestionsEnabled: boolean;
   onToggleInlineSuggestions: (enabled: boolean) => void;
+  showPromptBar?: boolean;
 }
 
 export const EditorToolbar: React.FC<EditorToolbarProps> = ({
@@ -21,7 +22,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
   isGenerating,
   onGenerate,
   isInlineSuggestionsEnabled,
-  onToggleInlineSuggestions
+  onToggleInlineSuggestions,
+  showPromptBar = true
 }) => {
   const [prompt, setPrompt] = useState('');
 
@@ -92,24 +94,26 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
         </button>
       </div>
       
-      <div className="EditorToolbar-ai">
-        <input
-          type="text"
-          placeholder="Ask AI to generate code... (Ctrl/Cmd + Enter to generate)"
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyPress={handleKeyPress}
-          className="EditorToolbar-prompt"
-          disabled={isGenerating}
-        />
-        <button
-          onClick={handleGenerate}
-          disabled={!prompt.trim() || isGenerating}
-          className="EditorToolbar-generate-btn"
-        >
-          {isGenerating ? 'Generating...' : 'Generate'}
-        </button>
-      </div>
+      {showPromptBar ? (
+        <div className="EditorToolbar-ai">
+          <input
+            type="text"
+            placeholder="Ask AI to generate code... (Ctrl/Cmd + Enter to generate)"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyPress={handleKeyPress}
+            className="EditorToolbar-prompt"
+            disabled={isGenerating}
+          />
+          <button
+            onClick={handleGenerate}
+            disabled={!prompt.trim() || isGenerating}
+            className="EditorToolbar-generate-btn"
+          >
+            {isGenerating ? 'Generating...' : 'Generate'}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }; 

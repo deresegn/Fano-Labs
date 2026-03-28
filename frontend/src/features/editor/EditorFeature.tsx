@@ -30,11 +30,13 @@ self.MonacoEnvironment = {
 interface EditorFeatureProps {
   state: EditorState;
   onStateChange: (state: EditorState) => void;
+  showPromptBar?: boolean;
 }
 
 export const EditorFeature: React.FC<EditorFeatureProps> = ({ 
   state, 
-  onStateChange 
+  onStateChange,
+  showPromptBar = true
 }) => {
   const editorRef = useRef<any>(null);
   
@@ -72,6 +74,7 @@ export const EditorFeature: React.FC<EditorFeatureProps> = ({
         onGenerate={handleGenerate}
         isInlineSuggestionsEnabled={isInlineSuggestionsEnabled}
         onToggleInlineSuggestions={setIsInlineSuggestionsEnabled}
+        showPromptBar={showPromptBar}
       />
       
       <EditorContainer>

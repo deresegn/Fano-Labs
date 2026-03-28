@@ -301,16 +301,43 @@
   margin-top: auto;
 }
 
-.ChatInputRow {
+.AgentStatusLine {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.AgentStatusLine span {
+  font-size: 11px;
+  color: #9fb1dd;
+  background: #232b41;
+  border: 1px solid #344365;
+  border-radius: 999px;
+  padding: 2px 8px;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ChatControlsRow {
   display: grid;
-  grid-template-columns: minmax(120px, 150px) minmax(140px, 170px) minmax(130px, 160px) 1fr 72px;
+  grid-template-columns: minmax(110px, 1fr) minmax(140px, 1.2fr) minmax(120px, 1fr);
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.ChatComposerRow {
+  display: grid;
+  grid-template-columns: 1fr 72px;
   gap: 8px;
   align-items: end;
 }
 
-.ChatInputRow select,
-.ChatInputRow textarea,
-.ChatInputRow button {
+.ChatControlsRow select,
+.ChatComposerRow textarea,
+.ChatComposerRow button {
   border-radius: 6px;
   border: 1px solid #394462;
   background: #232a3d;
@@ -318,20 +345,21 @@
   font-size: 12px;
 }
 
-.ChatInputRow select,
-.ChatInputRow button {
+.ChatControlsRow select,
+.ChatComposerRow button {
   height: 36px;
   padding: 0 10px;
 }
 
-.ChatInputRow textarea {
-  min-height: 54px;
-  max-height: 120px;
+.ChatComposerRow textarea {
+  min-height: 72px;
+  max-height: 180px;
   resize: none;
-  padding: 8px;
+  padding: 10px;
+  line-height: 1.45;
 }
 
-.ChatInputRow button {
+.ChatComposerRow button {
   cursor: pointer;
 }
 
@@ -453,6 +481,10 @@
   }
 
   .ChatInputRow {
+    grid-template-columns: 1fr;
+  }
+  .ChatControlsRow,
+  .ChatComposerRow {
     grid-template-columns: 1fr;
   }
 }

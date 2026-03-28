@@ -549,7 +549,7 @@ function App() {
             </div>
 
             <main className="EditorHost">
-              <EditorFeature state={editorState} onStateChange={setEditorState} />
+              <EditorFeature state={editorState} onStateChange={setEditorState} showPromptBar={false} />
             </main>
 
             {isTerminalOpen ? (
@@ -611,7 +611,12 @@ function App() {
                 </div>
 
                 <div className="ChatInputZone">
-                  <div className="ChatInputRow">
+                  <div className="AgentStatusLine">
+                    <span>{selectedProvider.toUpperCase()}</span>
+                    <span>{editorState.selectedModel}</span>
+                    <span>{agentMode === 'repo_analyst' ? 'Repo Analyst' : agentMode === 'code_editor' ? 'Code Editor' : 'Chat'}</span>
+                  </div>
+                  <div className="ChatControlsRow">
                     <select value={selectedProvider} onChange={(e) => setSelectedProvider(e.target.value as AIProvider)}>
                       {providerOptions.map((p) => (
                         <option key={p.id} value={p.id} disabled={!p.enabled}>
@@ -640,10 +645,18 @@ function App() {
                       <option value="repo_analyst">Repo Analyst</option>
                       <option value="code_editor">Code Editor</option>
                     </select>
+                  </div>
+                  <div className="ChatComposerRow">
                     <textarea
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
-                      placeholder="Plan, ask, and iterate..."
+                      placeholder={
+                        agentMode === 'repo_analyst'
+                          ? 'Ask to scan architecture, trace modules, or explain data flow...'
+                          : agentMode === 'code_editor'
+                            ? 'Describe the code change you want and where to apply it...'
+                            : 'Plan, ask, and iterate...'
+                      }
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();
