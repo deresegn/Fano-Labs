@@ -11,14 +11,17 @@ const BACKEND_URL =
 
 const backend = BACKEND_URL.replace(/\/$/, '');
 const ollama = OLLAMA_URL.replace(/\/$/, '');
-const IS_TAURI = (
-  typeof (window as any).__TAURI__ !== 'undefined' ||
-  typeof (window as any).__TAURI_INTERNALS__ !== 'undefined' ||
-  (typeof window !== 'undefined' &&
-    (window as any).location &&
-    (((window as any).location.protocol === 'tauri:') ||
-      String((window as any).location.origin || '').startsWith('tauri://')))
-);
+
+function isTauriRuntime(): boolean {
+  if (typeof window === 'undefined') return false;
+  const w: any = window as any;
+  return (
+    typeof w.__TAURI__ !== 'undefined' ||
+    typeof w.__TAURI_INTERNALS__ !== 'undefined' ||
+    String(w.location?.protocol || '') === 'tauri:' ||
+    String(w.location?.origin || '').startsWith('tauri://')
+  );
+}
 
 async function fetchOllamaModels(): Promise<Array<{id:string;name:string;description?:string}>> {
   const r = await fetch(`${ollama}/api/tags`);
@@ -39,7 +42,7 @@ async function fetchOllamaModels(): Promise<Array<{id:string;name:string;descrip
 }
 
 async function nativeOllamaModels(): Promise<Array<{id:string;name:string;description?:string}>> {
-  if (!IS_TAURI) return [];
+  if (!isTauriRuntime()) return [];
   const names = await invoke<string[]>('list_local_models');
   if (!Array.isArray(names)) return [];
   return names
@@ -49,7 +52,7 @@ async function nativeOllamaModels(): Promise<Array<{id:string;name:string;descri
 }
 
 async function nativeOllamaGenerate(req: GenReq): Promise<string> {
-  if (!IS_TAURI) throw new Error('native_ollama_unavailable');
+  if (!isTauriRuntime()) throw new Error('native_ollama_unavailable');
   const out = await invoke<string>('generate_with_ollama', {
     prompt: req.prompt,
     model: req.model ?? 'qwen2.5-coder:0.5b'
@@ -114,7 +117,7 @@ export async function getAvailableModels(): Promise<Array<{id:string;name:string
   try {
     const unique = new Map<string, {id:string;name:string;description?:string}>();
 
-    if (IS_TAURI) {
+    if (isTauriRuntime()) {
       try {
         const native = await nativeOllamaModels();
         native.forEach((m) => unique.set(m.id, m));
