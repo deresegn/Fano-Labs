@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::Serialize;
+use std::collections::{HashSet, VecDeque};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -37,6 +38,15 @@ fn should_skip_entry(name: &str) -> bool {
             | ".cache"
     )
 }
+
+#[cfg(windows)]
+fn apply_no_window(cmd: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(0x08000000);
+}
+
+#[cfg(not(windows))]
+fn apply_no_window(_cmd: &mut Command) {}
 
 fn normalize_input_path(input: &str) -> String {
     input
@@ -135,6 +145,148 @@ fn read_shallow(path: &Path) -> Result<Vec<FileNode>, String> {
     Ok(nodes)
 }
 
+fn is_probably_text_file(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    if matches!(name.as_str(), "readme" | "license" | "dockerfile" | "makefile") {
+        return true;
+    }
+    let ext = path
+        .extension()
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    matches!(
+        ext.as_str(),
+        "md"
+            | "txt"
+            | "json"
+            | "js"
+            | "jsx"
+            | "ts"
+            | "tsx"
+            | "mjs"
+            | "cjs"
+            | "py"
+            | "rs"
+            | "go"
+            | "java"
+            | "cs"
+            | "toml"
+            | "yaml"
+            | "yml"
+            | "ini"
+            | "conf"
+            | "xml"
+            | "css"
+            | "scss"
+            | "html"
+            | "sql"
+            | "sh"
+            | "ps1"
+    )
+}
+
+fn read_text_snippet(path: &Path, max_chars: usize) -> Option<String> {
+    let bytes = fs::read(path).ok()?;
+    if bytes.contains(&0) {
+        return None;
+    }
+    let mut text = String::from_utf8_lossy(&bytes).replace('\r', "");
+    if text.len() > max_chars {
+        text.truncate(max_chars);
+        text.push_str("\n... [truncated]");
+    }
+    Some(text)
+}
+
+fn build_repo_snapshot(root: &Path, max_files: usize, max_chars_per_file: usize) -> String {
+    let mut files: Vec<PathBuf> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    let preferred = [
+        "README.md",
+        "ARCHITECTURE.md",
+        "package.json",
+        "tsconfig.json",
+        "vite.config.ts",
+        "frontend/package.json",
+        "backend/package.json",
+        "backend/server.ts",
+        "src-tauri/tauri.conf.json",
+        "src-tauri/Cargo.toml",
+    ];
+
+    for rel in preferred {
+        let p = root.join(rel);
+        if p.is_file() {
+            let key = p.to_string_lossy().to_string();
+            if seen.insert(key) {
+                files.push(p);
+            }
+        }
+    }
+
+    let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::new();
+    queue.push_back((root.to_path_buf(), 0));
+    for seed in ["src", "frontend/src", "backend/src", "src-tauri/src"] {
+        let p = root.join(seed);
+        if p.is_dir() {
+            queue.push_back((p, 0));
+        }
+    }
+
+    while let Some((dir, depth)) = queue.pop_front() {
+        if files.len() >= max_files || depth > 3 {
+            continue;
+        }
+        let entries = match fs::read_dir(&dir) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten().take(120) {
+            if files.len() >= max_files {
+                break;
+            }
+            let p = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') || should_skip_entry(&name) {
+                continue;
+            }
+            if p.is_dir() {
+                queue.push_back((p, depth + 1));
+                continue;
+            }
+            if !is_probably_text_file(&p) {
+                continue;
+            }
+            let key = p.to_string_lossy().to_string();
+            if seen.insert(key) {
+                files.push(p);
+            }
+        }
+    }
+
+    let mut out = String::new();
+    out.push_str("Workspace snapshot (real files):\n");
+    out.push_str(&format!("Root: {}\n", root.to_string_lossy()));
+    out.push_str("Files sampled:\n");
+    for p in &files {
+        let rel = p.strip_prefix(root).unwrap_or(p);
+        out.push_str(&format!("- {}\n", rel.to_string_lossy()));
+    }
+
+    out.push_str("\nFile snippets:\n");
+    for p in files {
+        let rel = p.strip_prefix(root).unwrap_or(&p);
+        if let Some(snippet) = read_text_snippet(&p, max_chars_per_file) {
+            out.push_str(&format!("\n--- {} ---\n{}\n", rel.to_string_lossy(), snippet));
+        }
+    }
+    out
+}
+
 #[tauri::command]
 fn open_folder_dialog() -> Option<String> {
     let default_dir = std::env::var("USERPROFILE")
@@ -169,13 +321,15 @@ fn list_directory_flat(path: String) -> Result<Vec<FileNode>, String> {
 #[tauri::command]
 fn get_git_branch(path: String) -> Option<String> {
     let root = resolve_workspace_path(&path).ok()?;
-    let output = Command::new("git")
-        .args([
+    let mut cmd = Command::new("git");
+    cmd.args([
             "-C",
             root.to_string_lossy().as_ref(),
             "branch",
             "--show-current",
-        ])
+        ]);
+    apply_no_window(&mut cmd);
+    let output = cmd
         .output()
         .ok()?;
 
@@ -185,6 +339,12 @@ fn get_git_branch(path: String) -> Option<String> {
 
     let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if branch.is_empty() { None } else { Some(branch) }
+}
+
+#[tauri::command]
+fn read_repo_snapshot(path: String) -> Result<String, String> {
+    let root = resolve_workspace_path(&path)?;
+    Ok(build_repo_snapshot(root.as_path(), 24, 2800))
 }
 
 fn resolve_node_bin() -> Option<PathBuf> {
@@ -240,11 +400,13 @@ fn resolve_ollama_bin() -> Option<PathBuf> {
 #[tauri::command]
 fn list_local_models() -> Result<Vec<String>, String> {
     let ollama_bin = resolve_ollama_bin().unwrap_or_else(|| PathBuf::from("ollama"));
-    let output = Command::new(ollama_bin)
-        .args(["list"])
+    let mut cmd = Command::new(ollama_bin);
+    cmd.args(["list"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    apply_no_window(&mut cmd);
+    let output = cmd
         .output()
         .map_err(|e| format!("failed_to_run_ollama: {}", e))?;
 
@@ -280,11 +442,13 @@ fn generate_with_ollama(prompt: String, model: Option<String>) -> Result<String,
     }
 
     let ollama_bin = resolve_ollama_bin().unwrap_or_else(|| PathBuf::from("ollama"));
-    let output = Command::new(ollama_bin)
-        .args(["run", &selected, &prompt])
+    let mut cmd = Command::new(ollama_bin);
+    cmd.args(["run", &selected, &prompt])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    apply_no_window(&mut cmd);
+    let output = cmd
         .output()
         .map_err(|e| format!("failed_to_run_ollama: {}", e))?;
 
@@ -320,6 +484,7 @@ fn start_embedded_backend(app: &tauri::AppHandle) {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    apply_no_window(&mut cmd);
 
     match cmd.spawn() {
         Ok(child) => {
@@ -358,6 +523,7 @@ fn main() {
             list_directory_tree,
             list_directory_flat,
             get_git_branch,
+            read_repo_snapshot,
             list_local_models,
             generate_with_ollama
         ])

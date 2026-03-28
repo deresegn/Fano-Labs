@@ -95,6 +95,7 @@ function App() {
   const [activeThreadId, setActiveThreadId] = useState<string>('thread-1');
   const [chatInput, setChatInput] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [isAnalyzingWorkspace, setIsAnalyzingWorkspace] = useState<boolean>(false);
 
   const chatMessagesRef = useRef<HTMLDivElement | null>(null);
   const resizeState = useRef<{ resizing: boolean; startX: number; startWidth: number }>({
@@ -341,15 +342,33 @@ function App() {
     updateActiveThreadMessages((messages) => [...messages, userMessage, assistantMessage]);
 
     const treeLines = flattenTree(fileTree, '', 0, 120);
+    const wantsRepoAnalysis = /\b(scan|analy[sz]e|architecture|codebase|repo|repository)\b/i.test(
+      prompt
+    );
+    let repoSnapshot = '';
+
+    if (wantsRepoAnalysis && workspacePath && isTauri()) {
+      setIsAnalyzingWorkspace(true);
+      try {
+        repoSnapshot = await invoke<string>('read_repo_snapshot', { path: workspacePath });
+      } catch {
+        repoSnapshot = '';
+      } finally {
+        setIsAnalyzingWorkspace(false);
+      }
+    }
+
     const workspaceContext = [
       'You are FANO-LABS local coding assistant.',
       'You only have access to the workspace context provided below.',
       'Never say the repository is private/inaccessible if a file tree is provided.',
+      'If user asks for architecture, summarize concrete modules, entrypoints, data flow, and dependencies from provided context.',
       'If details are missing, ask for a specific file to open next.',
       `Workspace root: ${workspacePath || 'unknown'}`,
       `Active file: ${activeFilePath || 'none'}`,
       'Visible workspace tree:',
-      treeLines.length > 0 ? treeLines.join('\n') : '(tree unavailable)'
+      treeLines.length > 0 ? treeLines.join('\n') : '(tree unavailable)',
+      repoSnapshot ? `\nRepository snapshot:\n${repoSnapshot}` : ''
     ].join('\n');
 
     try {
@@ -376,6 +395,7 @@ function App() {
       );
     } finally {
       setIsGenerating(false);
+      setIsAnalyzingWorkspace(false);
     }
   };
 
@@ -534,6 +554,9 @@ function App() {
                       <pre>{message.content}</pre>
                     </div>
                   ))}
+                  {isAnalyzingWorkspace ? (
+                    <div className="TypingDots">Analyzing workspace...</div>
+                  ) : null}
                   {isGenerating ? <div className="TypingDots">AI is typing...</div> : null}
                 </div>
 
