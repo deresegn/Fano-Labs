@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { EditorState } from '../../shared/types';
 import { BackendConnection } from './features/backend/BackendConnection';
 import { EditorFeature } from './features/editor/EditorFeature';
-import { getAvailableModels, streamGenerate } from './api';
+import { AIProvider, getAvailableModelsForProvider, getProviders, streamGenerate } from './api';
 import './App.css';
 
 type FileNode = {
@@ -73,6 +73,11 @@ function App() {
   const [activeFilePath, setActiveFilePath] = useState<string>('');
   const [branchName, setBranchName] = useState<string>('unknown');
   const [modelOptions, setModelOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedProvider, setSelectedProvider] = useState<AIProvider>('ollama');
+  const [providerOptions, setProviderOptions] = useState<Array<{ id: AIProvider; enabled: boolean }>>([
+    { id: 'ollama', enabled: true },
+  ]);
+  const [agentMode, setAgentMode] = useState<'chat' | 'repo_analyst' | 'code_editor'>('chat');
 
   const [rightPaneWidth, setRightPaneWidth] = useState<number>(380);
   const [isRightPaneOpen, setIsRightPaneOpen] = useState<boolean>(true);
@@ -123,6 +128,18 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const loadProviders = async () => {
+      const providers = await getProviders();
+      setProviderOptions(providers);
+      const active = providers.find((p) => p.enabled);
+      if (active && !providers.some((p) => p.id === selectedProvider && p.enabled)) {
+        setSelectedProvider(active.id);
+      }
+    };
+    loadProviders();
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     let attempts = 0;
 
@@ -130,7 +147,7 @@ function App() {
       attempts += 1;
       const unique = new Map<string, { id: string; name: string }>();
 
-      if (isTauri()) {
+      if (isTauri() && selectedProvider === 'ollama') {
         try {
           const native = await invoke<string[]>('list_local_models');
           if (Array.isArray(native)) {
@@ -145,7 +162,7 @@ function App() {
       }
 
       try {
-        const models = await getAvailableModels();
+        const models = await getAvailableModelsForProvider(selectedProvider);
         models.forEach((m) => {
           const id = String(m.id || '').trim();
           if (!id) return;
@@ -172,7 +189,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedProvider]);
 
   useEffect(() => {
     chatMessagesRef.current?.scrollTo({
@@ -381,8 +398,16 @@ function App() {
         ].join('\n')
       : '';
 
+    const agentModeInstruction =
+      agentMode === 'repo_analyst'
+        ? 'Agent mode: Repo Analyst. Focus on architecture, module boundaries, data flow, and confidence levels.'
+        : agentMode === 'code_editor'
+          ? 'Agent mode: Code Editor. Propose concrete edits, include patch strategy, and suggest next file changes.'
+          : 'Agent mode: Chat. Keep responses concise and actionable.';
+
     const workspaceContext = [
       'You are FANO-LABS local coding assistant.',
+      agentModeInstruction,
       'You only have access to the workspace context provided below.',
       'Never say the repository is private/inaccessible if a file tree is provided.',
       'If user asks for architecture, summarize concrete modules, entrypoints, data flow, and dependencies from provided context.',
@@ -400,7 +425,8 @@ function App() {
         {
           prompt: `${workspaceContext}\n\nUser request:\n${prompt}`,
           model: editorState.selectedModel,
-          language: editorState.language
+          language: editorState.language,
+          provider: selectedProvider
         },
         (delta) => {
           updateActiveThreadMessages((messages) =>
@@ -586,6 +612,13 @@ function App() {
 
                 <div className="ChatInputZone">
                   <div className="ChatInputRow">
+                    <select value={selectedProvider} onChange={(e) => setSelectedProvider(e.target.value as AIProvider)}>
+                      {providerOptions.map((p) => (
+                        <option key={p.id} value={p.id} disabled={!p.enabled}>
+                          {p.id.toUpperCase()}{p.enabled ? '' : ' (no key)'}
+                        </option>
+                      ))}
+                    </select>
                     <select
                       value={editorState.selectedModel}
                       onChange={(e) =>
@@ -601,6 +634,11 @@ function App() {
                       ) : (
                         <option value={editorState.selectedModel}>{editorState.selectedModel}</option>
                       )}
+                    </select>
+                    <select value={agentMode} onChange={(e) => setAgentMode(e.target.value as any)}>
+                      <option value="chat">Chat Mode</option>
+                      <option value="repo_analyst">Repo Analyst</option>
+                      <option value="code_editor">Code Editor</option>
                     </select>
                     <textarea
                       value={chatInput}

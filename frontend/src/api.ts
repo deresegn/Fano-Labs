@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 
+export type AIProvider = 'ollama' | 'openai' | 'anthropic' | 'gemini';
 type GenReq = { prompt: string; model?: string; language?: string; context?: string };
 type GenRes = { code: string; error?: string };
 
@@ -68,9 +69,29 @@ async function nativeOllamaGenerate(req: GenReq): Promise<string> {
   }
 }
 
-export async function generateCode(req: GenReq): Promise<GenRes> {
+export async function getProviders(): Promise<Array<{ id: AIProvider; enabled: boolean }>> {
   try {
-    if (USE_OLLAMA) {
+    const r = await fetch(`${backend}/providers`);
+    if (!r.ok) throw new Error(`providers ${r.status}`);
+    const j: any = await r.json();
+    const providers = Array.isArray(j?.providers) ? j.providers : [];
+    return providers
+      .map((p: any) => ({ id: String(p?.id || '') as AIProvider, enabled: Boolean(p?.enabled) }))
+      .filter((p: any) => p.id === 'ollama' || p.id === 'openai' || p.id === 'anthropic' || p.id === 'gemini');
+  } catch {
+    return [
+      { id: 'ollama', enabled: true },
+      { id: 'openai', enabled: false },
+      { id: 'anthropic', enabled: false },
+      { id: 'gemini', enabled: false },
+    ];
+  }
+}
+
+export async function generateCode(req: GenReq & { provider?: AIProvider }): Promise<GenRes> {
+  const provider: AIProvider = (req.provider || 'ollama') as AIProvider;
+  try {
+    if (USE_OLLAMA && provider === 'ollama') {
       const r = await fetch(`${ollama}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -88,13 +109,14 @@ export async function generateCode(req: GenReq): Promise<GenRes> {
         const r = await fetch(`${backend}/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: req.prompt, model: req.model, language: req.language })
+          body: JSON.stringify({ prompt: req.prompt, model: req.model, language: req.language, provider })
         });
         if (!r.ok) throw new Error(`backend ${r.status}`);
         const j: any = await r.json();
         return { code: (j?.response ?? '').toString().trim() };
       } catch {
         try {
+          if (provider !== 'ollama') throw new Error('non_ollama_provider');
           const native = await nativeOllamaGenerate(req);
           return { code: native };
         } catch {
@@ -120,17 +142,23 @@ export async function generateCode(req: GenReq): Promise<GenRes> {
 }
 
 export async function getAvailableModels(): Promise<Array<{id:string;name:string;description?:string}>> {
+  return getAvailableModelsForProvider('ollama');
+}
+
+export async function getAvailableModelsForProvider(provider: AIProvider): Promise<Array<{id:string;name:string;description?:string}>> {
   try {
     const unique = new Map<string, {id:string;name:string;description?:string}>();
 
-    const native = await nativeOllamaModels();
-    native.forEach((m) => unique.set(m.id, m));
+    if (provider === 'ollama') {
+      const native = await nativeOllamaModels();
+      native.forEach((m) => unique.set(m.id, m));
+    }
 
-    if (USE_OLLAMA) {
+    if (USE_OLLAMA && provider === 'ollama') {
       if (unique.size > 0) return Array.from(unique.values());
       return await fetchOllamaModels();
     } else {
-      const r = await fetch(`${backend}/models`);
+      const r = await fetch(`${backend}/models?provider=${encodeURIComponent(provider)}`);
       if (!r.ok) throw new Error(`backend ${r.status}`);
       const j: any = await r.json();
       const names: string[] = j?.models ?? [];
@@ -142,6 +170,7 @@ export async function getAvailableModels(): Promise<Array<{id:string;name:string
 
       // Secondary source: direct Ollama tags when available, to avoid stale backend caches.
       try {
+        if (provider !== 'ollama') throw new Error('skip_direct_ollama_for_non_ollama_provider');
         const or = await fetch(`${ollama}/api/tags`);
         if (or.ok) {
           const oj: any = await or.json();
@@ -161,29 +190,33 @@ export async function getAvailableModels(): Promise<Array<{id:string;name:string
       }
 
       if (unique.size > 0) return Array.from(unique.values());
-      return [{ id: 'qwen2.5-coder:0.5b', name: 'qwen2.5-coder:0.5b' }];
+      const fallback = provider === 'openai' ? 'gpt-4.1-mini' : provider === 'anthropic' ? 'claude-3-5-haiku-latest' : provider === 'gemini' ? 'gemini-2.5-flash' : 'qwen2.5-coder:0.5b';
+      return [{ id: fallback, name: fallback }];
     }
   } catch {
     try {
+      if (provider !== 'ollama') throw new Error('no_direct_fallback_for_non_ollama');
       const direct = await fetchOllamaModels();
       if (direct.length > 0) return direct;
     } catch {
       // ignore
     }
-    return [{ id: 'qwen2.5-coder:0.5b', name: 'qwen2.5-coder:0.5b' }];
+    const fallback = provider === 'openai' ? 'gpt-4.1-mini' : provider === 'anthropic' ? 'claude-3-5-haiku-latest' : provider === 'gemini' ? 'gemini-2.5-flash' : 'qwen2.5-coder:0.5b';
+    return [{ id: fallback, name: fallback }];
   }
 }
 
 export async function streamGenerate(
-  req: { prompt: string; model?: string; language?: string },
+  req: { prompt: string; model?: string; language?: string; provider?: AIProvider },
   onDelta: (chunk: string) => void
 ): Promise<void> {
+  const provider = (req.provider || 'ollama') as AIProvider;
   let hadDelta = false;
   try {
     const r = await fetch(`${backend}/generate/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(req)
+      body: JSON.stringify({ ...req, provider })
     });
     if (!r.ok || !r.body) throw new Error(`stream failed: ${r.status}`);
 
@@ -223,6 +256,7 @@ export async function streamGenerate(
   } catch {
     // Tauri fallback (or transient stream failures): one-shot generation
     try {
+      if (provider !== 'ollama') throw new Error('non_ollama_provider');
       const native = await nativeOllamaGenerate(req as any);
       if (native) {
         onDelta(native);

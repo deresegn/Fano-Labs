@@ -303,7 +303,7 @@
 
 .ChatInputRow {
   display: grid;
-  grid-template-columns: minmax(140px, 170px) 1fr 72px;
+  grid-template-columns: minmax(120px, 150px) minmax(140px, 170px) minmax(130px, 160px) 1fr 72px;
   gap: 8px;
   align-items: end;
 }
