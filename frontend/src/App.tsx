@@ -366,15 +366,18 @@ function App() {
           '',
           'When the user asks to scan/explain architecture, your response MUST follow exactly these sections in order:',
           '1) Observed (with file refs)',
-          'Use bullets. Include concrete evidence from provided tree/snapshot. Add file refs like `frontend/src/App.tsx`.',
+          'Use bullets. Include only concrete evidence from provided tree/snapshot. Add file refs like `frontend/src/App.tsx`.',
           '2) Inferred',
-          'List reasonable inferences separately from observed facts.',
+          'List reasonable inferences separately from observed facts. If unsure, say `Unknown (not in provided files)`.',
           '3) Open Questions',
           'List missing info needed for higher confidence.',
           '4) Next files to inspect',
           'Give 5-10 specific paths to inspect next.',
+          'Output only these 4 sections and nothing else.',
+          'Do not repeat or discuss these instructions in the answer.',
           'Do not output generic git setup instructions.',
-          'Do not claim repository is private/inaccessible when context is provided.'
+          'Do not claim repository is private/inaccessible when context is provided.',
+          'Do not invent framework requirements like `main`/`render` unless explicitly present in files.'
         ].join('\n')
       : '';
 

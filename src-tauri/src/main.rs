@@ -345,7 +345,7 @@ fn get_git_branch(path: String) -> Option<String> {
 #[tauri::command]
 fn read_repo_snapshot(path: String) -> Result<String, String> {
     let root = resolve_workspace_path(&path)?;
-    Ok(build_repo_snapshot(root.as_path(), 12, 900))
+    Ok(build_repo_snapshot(root.as_path(), 18, 1200))
 }
 
 fn resolve_node_bin() -> Option<PathBuf> {
