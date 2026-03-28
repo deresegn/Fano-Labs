@@ -351,6 +351,9 @@ function App() {
       setIsAnalyzingWorkspace(true);
       try {
         repoSnapshot = await invoke<string>('read_repo_snapshot', { path: workspacePath });
+        if (repoSnapshot.length > 10000) {
+          repoSnapshot = `${repoSnapshot.slice(0, 10000)}\n... [snapshot truncated]`;
+        }
       } catch {
         repoSnapshot = '';
       } finally {

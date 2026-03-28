@@ -5,6 +5,7 @@ use serde::Serialize;
 use std::collections::{HashSet, VecDeque};
 use std::env;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -344,7 +345,7 @@ fn get_git_branch(path: String) -> Option<String> {
 #[tauri::command]
 fn read_repo_snapshot(path: String) -> Result<String, String> {
     let root = resolve_workspace_path(&path)?;
-    Ok(build_repo_snapshot(root.as_path(), 24, 2800))
+    Ok(build_repo_snapshot(root.as_path(), 12, 900))
 }
 
 fn resolve_node_bin() -> Option<PathBuf> {
@@ -443,14 +444,24 @@ fn generate_with_ollama(prompt: String, model: Option<String>) -> Result<String,
 
     let ollama_bin = resolve_ollama_bin().unwrap_or_else(|| PathBuf::from("ollama"));
     let mut cmd = Command::new(ollama_bin);
-    cmd.args(["run", &selected, &prompt])
-        .stdin(Stdio::null())
+    cmd.args(["run", &selected])
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     apply_no_window(&mut cmd);
-    let output = cmd
-        .output()
+    let mut child = cmd
+        .spawn()
         .map_err(|e| format!("failed_to_run_ollama: {}", e))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(prompt.as_bytes())
+            .map_err(|e| format!("failed_to_write_prompt: {}", e))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("failed_to_read_ollama_output: {}", e))?;
 
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr).to_string();
