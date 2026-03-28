@@ -57,6 +57,11 @@
   letter-spacing: 0.04em;
 }
 
+.RightHeaderActions {
+  display: flex;
+  gap: 8px;
+}
+
 .PaneContent {
   flex: 1;
   overflow: auto;
@@ -173,6 +178,38 @@
 .EditorHost {
   flex: 1;
   min-height: 0;
+}
+
+.ChatEditorHost {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ChatEditorHeader {
+  height: 40px;
+  border-bottom: 1px solid #2b2f3c;
+  background: #171a23;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+}
+
+.ChatEditorHeader strong {
+  font-size: 12px;
+  color: #cbd5f2;
+}
+
+.ChatEditorHeader button {
+  border: 1px solid #3c4869;
+  background: #242b3f;
+  color: #d9e3ff;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .TerminalPane {
@@ -299,6 +336,10 @@
   background: #171a24;
   padding: 10px;
   margin-top: auto;
+}
+
+.CenterComposerDock {
+  border-top: 1px solid #2b2f3c;
 }
 
 .AgentStatusLine {

@@ -82,6 +82,7 @@ function App() {
   const [rightPaneWidth, setRightPaneWidth] = useState<number>(380);
   const [isRightPaneOpen, setIsRightPaneOpen] = useState<boolean>(true);
   const [isTerminalOpen, setIsTerminalOpen] = useState<boolean>(false);
+  const [isChatInEditor, setIsChatInEditor] = useState<boolean>(false);
 
   const [threads, setThreads] = useState<ChatThread[]>([
     {
@@ -467,6 +468,18 @@ function App() {
     </ul>
   );
 
+  const renderChatMessages = () => (
+    <div className="ChatMessages" ref={chatMessagesRef}>
+      {(activeThread?.messages || []).map((message) => (
+        <div key={message.id} className={`ChatBubble ${message.type}`}>
+          <pre>{message.content}</pre>
+        </div>
+      ))}
+      {isAnalyzingWorkspace ? <div className="TypingDots">Analyzing workspace...</div> : null}
+      {isGenerating ? <div className="TypingDots">AI is typing...</div> : null}
+    </div>
+  );
+
   if (!workspacePath) {
     return (
       <div className="App WelcomeRoot">
@@ -549,7 +562,19 @@ function App() {
             </div>
 
             <main className="EditorHost">
-              <EditorFeature state={editorState} onStateChange={setEditorState} showPromptBar={false} />
+              {isChatInEditor ? (
+                <section className="ChatEditorHost">
+                  <div className="ChatEditorHeader">
+                    <strong>{activeThread?.title || 'Chat'}</strong>
+                    <button type="button" onClick={() => setIsChatInEditor(false)}>
+                      Back To Editor
+                    </button>
+                  </div>
+                  {renderChatMessages()}
+                </section>
+              ) : (
+                <EditorFeature state={editorState} onStateChange={setEditorState} showPromptBar={false} />
+              )}
             </main>
 
             {isTerminalOpen ? (
@@ -564,6 +589,75 @@ function App() {
                 </div>
               </section>
             ) : null}
+
+            <div className="ChatInputZone CenterComposerDock">
+              <div className="AgentStatusLine">
+                <span>{selectedProvider.toUpperCase()}</span>
+                <span>{editorState.selectedModel}</span>
+                <span>{agentMode === 'repo_analyst' ? 'Repo Analyst' : agentMode === 'code_editor' ? 'Code Editor' : 'Chat'}</span>
+              </div>
+              <div className="ChatControlsRow">
+                <select value={selectedProvider} onChange={(e) => setSelectedProvider(e.target.value as AIProvider)}>
+                  {providerOptions.map((p) => (
+                    <option key={p.id} value={p.id} disabled={!p.enabled}>
+                      {p.id.toUpperCase()}{p.enabled ? '' : ' (no key)'}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={editorState.selectedModel}
+                  onChange={(e) =>
+                    setEditorState((prev) => ({ ...prev, selectedModel: e.target.value }))
+                  }
+                >
+                  {modelOptions.length > 0 ? (
+                    modelOptions.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.name}
+                      </option>
+                    ))
+                  ) : (
+                    <option value={editorState.selectedModel}>{editorState.selectedModel}</option>
+                  )}
+                </select>
+                <select value={agentMode} onChange={(e) => setAgentMode(e.target.value as any)}>
+                  <option value="chat">Chat Mode</option>
+                  <option value="repo_analyst">Repo Analyst</option>
+                  <option value="code_editor">Code Editor</option>
+                </select>
+              </div>
+              <div className="ChatComposerRow">
+                <textarea
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder={
+                    agentMode === 'repo_analyst'
+                      ? 'Ask to scan architecture, trace modules, or explain data flow...'
+                      : agentMode === 'code_editor'
+                        ? 'Describe the code change you want and where to apply it...'
+                        : 'Plan, ask, and iterate...'
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      sendChatMessage();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={sendChatMessage}
+                  disabled={!chatInput.trim() || isGenerating}
+                >
+                  Send
+                </button>
+              </div>
+              <div className="StatusLine">
+                <span>{getProjectName(workspacePath)}</span>
+                <span>{branchName}</span>
+                <span>FANO-LABS Tab</span>
+              </div>
+            </div>
           </section>
 
           {isRightPaneOpen ? (
@@ -581,9 +675,14 @@ function App() {
               <aside className="RightPane" style={{ width: rightPaneWidth }}>
                 <div className="PaneHeader RightHeader">
                   <strong>New Agent / Chats</strong>
-                  <button type="button" onClick={addNewThread}>
-                    + New Chat
-                  </button>
+                  <div className="RightHeaderActions">
+                    <button type="button" onClick={() => setIsChatInEditor((v) => !v)}>
+                      {isChatInEditor ? 'Dock In Side' : 'Open In Editor'}
+                    </button>
+                    <button type="button" onClick={addNewThread}>
+                      + New Chat
+                    </button>
+                  </div>
                 </div>
                 <div className="ThreadList">
                   {threads.map((thread) => (
@@ -598,86 +697,9 @@ function App() {
                   ))}
                 </div>
 
-                <div className="ChatMessages" ref={chatMessagesRef}>
-                  {(activeThread?.messages || []).map((message) => (
-                    <div key={message.id} className={`ChatBubble ${message.type}`}>
-                      <pre>{message.content}</pre>
-                    </div>
-                  ))}
-                  {isAnalyzingWorkspace ? (
-                    <div className="TypingDots">Analyzing workspace...</div>
-                  ) : null}
-                  {isGenerating ? <div className="TypingDots">AI is typing...</div> : null}
-                </div>
-
-                <div className="ChatInputZone">
-                  <div className="AgentStatusLine">
-                    <span>{selectedProvider.toUpperCase()}</span>
-                    <span>{editorState.selectedModel}</span>
-                    <span>{agentMode === 'repo_analyst' ? 'Repo Analyst' : agentMode === 'code_editor' ? 'Code Editor' : 'Chat'}</span>
-                  </div>
-                  <div className="ChatControlsRow">
-                    <select value={selectedProvider} onChange={(e) => setSelectedProvider(e.target.value as AIProvider)}>
-                      {providerOptions.map((p) => (
-                        <option key={p.id} value={p.id} disabled={!p.enabled}>
-                          {p.id.toUpperCase()}{p.enabled ? '' : ' (no key)'}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={editorState.selectedModel}
-                      onChange={(e) =>
-                        setEditorState((prev) => ({ ...prev, selectedModel: e.target.value }))
-                      }
-                    >
-                      {modelOptions.length > 0 ? (
-                        modelOptions.map((model) => (
-                          <option key={model.id} value={model.id}>
-                            {model.name}
-                          </option>
-                        ))
-                      ) : (
-                        <option value={editorState.selectedModel}>{editorState.selectedModel}</option>
-                      )}
-                    </select>
-                    <select value={agentMode} onChange={(e) => setAgentMode(e.target.value as any)}>
-                      <option value="chat">Chat Mode</option>
-                      <option value="repo_analyst">Repo Analyst</option>
-                      <option value="code_editor">Code Editor</option>
-                    </select>
-                  </div>
-                  <div className="ChatComposerRow">
-                    <textarea
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      placeholder={
-                        agentMode === 'repo_analyst'
-                          ? 'Ask to scan architecture, trace modules, or explain data flow...'
-                          : agentMode === 'code_editor'
-                            ? 'Describe the code change you want and where to apply it...'
-                            : 'Plan, ask, and iterate...'
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          sendChatMessage();
-                        }
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={sendChatMessage}
-                      disabled={!chatInput.trim() || isGenerating}
-                    >
-                      Send
-                    </button>
-                  </div>
-                  <div className="StatusLine">
-                    <span>{getProjectName(workspacePath)}</span>
-                    <span>{branchName}</span>
-                    <span>FANO-LABS IDE AI Editor</span>
-                  </div>
-                </div>
+                {!isChatInEditor ? renderChatMessages() : (
+                  <div className="PaneEmpty">Chat is open in the editor area.</div>
+                )}
               </aside>
             </>
           ) : null}
