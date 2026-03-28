@@ -18,6 +18,24 @@ const IS_TAURI = (
       String((window as any).location.origin || '').startsWith('tauri://')))
 );
 
+async function fetchOllamaModels(): Promise<Array<{id:string;name:string;description?:string}>> {
+  const r = await fetch(`${ollama}/api/tags`);
+  if (!r.ok) throw new Error(`ollama ${r.status}`);
+  const j: any = await r.json();
+  const models = Array.isArray(j?.models) ? j.models : [];
+  const unique = new Map<string, {id:string;name:string;description?:string}>();
+  models.forEach((m: any) => {
+    const id = String(m?.name || '').trim();
+    if (!id) return;
+    unique.set(id, {
+      id,
+      name: id,
+      description: m?.details?.family || 'Ollama'
+    });
+  });
+  return Array.from(unique.values());
+}
+
 export async function generateCode(req: GenReq): Promise<GenRes> {
   try {
     if (USE_OLLAMA) {
@@ -34,14 +52,29 @@ export async function generateCode(req: GenReq): Promise<GenRes> {
       const j: any = await r.json();
       return { code: (j?.response ?? '').toString().trim() };
     } else {
-      const r = await fetch(`${backend}/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: req.prompt, model: req.model, language: req.language })
-      });
-      if (!r.ok) throw new Error(`backend ${r.status}`);
-      const j: any = await r.json();
-      return { code: (j?.response ?? '').toString().trim() };
+      try {
+        const r = await fetch(`${backend}/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: req.prompt, model: req.model, language: req.language })
+        });
+        if (!r.ok) throw new Error(`backend ${r.status}`);
+        const j: any = await r.json();
+        return { code: (j?.response ?? '').toString().trim() };
+      } catch {
+        const or = await fetch(`${ollama}/api/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: req.model ?? 'qwen2.5-coder:0.5b',
+            prompt: req.prompt,
+            stream: false
+          })
+        });
+        if (!or.ok) throw new Error(`ollama ${or.status}`);
+        const oj: any = await or.json();
+        return { code: (oj?.response ?? '').toString().trim() };
+      }
     }
   } catch (e: any) {
     return { code: '', error: e?.message || 'generate_failed' };
@@ -53,20 +86,7 @@ export async function getAvailableModels(): Promise<Array<{id:string;name:string
     const unique = new Map<string, {id:string;name:string;description?:string}>();
 
     if (USE_OLLAMA) {
-      const r = await fetch(`${ollama}/api/tags`);
-      if (!r.ok) throw new Error(`ollama ${r.status}`);
-      const j: any = await r.json();
-      const models = Array.isArray(j?.models) ? j.models : [];
-      models.forEach((m: any) => {
-        const id = String(m?.name || '').trim();
-        if (!id) return;
-        unique.set(id, {
-          id,
-          name: id,
-          description: m?.details?.family || 'Ollama'
-        });
-      });
-      return Array.from(unique.values());
+      return await fetchOllamaModels();
     } else {
       const r = await fetch(`${backend}/models`);
       if (!r.ok) throw new Error(`backend ${r.status}`);
@@ -102,6 +122,12 @@ export async function getAvailableModels(): Promise<Array<{id:string;name:string
       return [{ id: 'qwen2.5-coder:0.5b', name: 'qwen2.5-coder:0.5b' }];
     }
   } catch {
+    try {
+      const direct = await fetchOllamaModels();
+      if (direct.length > 0) return direct;
+    } catch {
+      // ignore
+    }
     return [{ id: 'qwen2.5-coder:0.5b', name: 'qwen2.5-coder:0.5b' }];
   }
 }

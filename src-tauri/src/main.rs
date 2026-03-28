@@ -2,8 +2,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::Serialize;
+use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use tauri::Manager;
@@ -22,6 +23,47 @@ struct FileNode {
 }
 
 struct BackendState(Mutex<Option<Child>>);
+
+fn normalize_input_path(input: &str) -> String {
+    input
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .replace('/', "\\")
+}
+
+fn resolve_workspace_path(path: &str) -> Result<PathBuf, String> {
+    let normalized = normalize_input_path(path);
+    let as_path = PathBuf::from(&normalized);
+    if as_path.exists() && as_path.is_dir() {
+        return Ok(as_path);
+    }
+
+    // Helpful fallback for paths saved from browser/dev mode like C:\Users\<user>\<project>.
+    let project_name = as_path
+        .file_name()
+        .map(|v| v.to_string_lossy().to_string())
+        .unwrap_or_default();
+    if project_name.is_empty() {
+        return Err("Invalid folder path".to_string());
+    }
+
+    if let Ok(user_profile) = env::var("USERPROFILE") {
+        let candidates = vec![
+            PathBuf::from(&user_profile).join("GitProjects").join(&project_name),
+            PathBuf::from(&user_profile).join("Documents").join(&project_name),
+            PathBuf::from(&user_profile).join("Desktop").join(&project_name),
+        ];
+
+        for candidate in candidates {
+            if candidate.exists() && candidate.is_dir() {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    Err("Invalid folder path".to_string())
+}
 
 fn read_tree(path: &Path, depth: usize) -> Vec<FileNode> {
     if depth > 4 {
@@ -87,27 +129,33 @@ fn open_folder_dialog() -> Option<String> {
 }
 
 #[tauri::command]
+fn normalize_workspace_path(path: String) -> Result<String, String> {
+    let resolved = resolve_workspace_path(&path)?;
+    Ok(resolved.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 fn list_directory_tree(path: String) -> Result<Vec<FileNode>, String> {
-    let root = Path::new(&path);
-    if !root.exists() || !root.is_dir() {
-        return Err("Invalid folder path".to_string());
-    }
-    Ok(read_tree(root, 0))
+    let root = resolve_workspace_path(&path)?;
+    Ok(read_tree(root.as_path(), 0))
 }
 
 #[tauri::command]
 fn list_directory_flat(path: String) -> Result<Vec<FileNode>, String> {
-    let root = Path::new(&path);
-    if !root.exists() || !root.is_dir() {
-        return Err("Invalid folder path".to_string());
-    }
-    read_shallow(root)
+    let root = resolve_workspace_path(&path)?;
+    read_shallow(root.as_path())
 }
 
 #[tauri::command]
 fn get_git_branch(path: String) -> Option<String> {
+    let root = resolve_workspace_path(&path).ok()?;
     let output = Command::new("git")
-        .args(["-C", &path, "branch", "--show-current"])
+        .args([
+            "-C",
+            root.to_string_lossy().as_ref(),
+            "branch",
+            "--show-current",
+        ])
         .output()
         .ok()?;
 
@@ -117,6 +165,31 @@ fn get_git_branch(path: String) -> Option<String> {
 
     let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if branch.is_empty() { None } else { Some(branch) }
+}
+
+fn resolve_node_bin() -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(program_files) = env::var("ProgramFiles") {
+        candidates.push(PathBuf::from(program_files).join("nodejs").join("node.exe"));
+    }
+    if let Ok(program_files_x86) = env::var("ProgramFiles(x86)") {
+        candidates.push(PathBuf::from(program_files_x86).join("nodejs").join("node.exe"));
+    }
+    if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
+        candidates.push(
+            PathBuf::from(local_app_data)
+                .join("Programs")
+                .join("nodejs")
+                .join("node.exe"),
+        );
+    }
+
+    for candidate in candidates {
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 fn start_embedded_backend(app: &tauri::AppHandle) {
@@ -135,7 +208,8 @@ fn start_embedded_backend(app: &tauri::AppHandle) {
         return;
     }
 
-    let mut cmd = Command::new("node");
+    let node_bin = resolve_node_bin().unwrap_or_else(|| PathBuf::from("node"));
+    let mut cmd = Command::new(node_bin);
     cmd.arg(&entry)
         .current_dir(&backend_dir)
         .env("NODE_ENV", "production")
@@ -176,6 +250,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             greet,
             open_folder_dialog,
+            normalize_workspace_path,
             list_directory_tree,
             list_directory_flat,
             get_git_branch

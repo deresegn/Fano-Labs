@@ -152,31 +152,51 @@ function App() {
     persistRecentProjects(next);
   };
 
+  const removeRecentProject = (path: string) => {
+    persistRecentProjects(recentProjects.filter((p) => p !== path));
+  };
+
   const loadWorkspace = async (path: string) => {
-    setWorkspacePath(path);
-    appendRecentProject(path);
-    setActiveFilePath(path);
+    let resolvedPath = path;
+    if (isTauri()) {
+      try {
+        const normalized = await invoke<string>('normalize_workspace_path', { path });
+        if (normalized && typeof normalized === 'string') {
+          resolvedPath = normalized;
+        }
+      } catch {
+        // preserve original value so we can still show error below
+      }
+    }
+
+    setWorkspacePath(resolvedPath);
+    appendRecentProject(resolvedPath);
+    setActiveFilePath(resolvedPath);
     setIsLoadingTree(true);
     setFileTree([]);
     setTreeError('');
 
     try {
-      const nodes = await invoke<FileNode[]>('list_directory_tree', { path });
+      const nodes = await invoke<FileNode[]>('list_directory_tree', { path: resolvedPath });
       if (Array.isArray(nodes) && nodes.length > 0) {
         setFileTree(nodes);
       } else {
-        const flat = await invoke<FileNode[]>('list_directory_flat', { path });
+        const flat = await invoke<FileNode[]>('list_directory_flat', { path: resolvedPath });
         setFileTree(Array.isArray(flat) ? flat : []);
       }
     } catch (e: any) {
       setFileTree([]);
-      setTreeError(String(e?.message || e || 'Failed to load directory tree'));
+      const msg = String(e?.message || e || 'Failed to load directory tree');
+      setTreeError(msg);
+      if (msg.toLowerCase().includes('invalid folder path')) {
+        removeRecentProject(resolvedPath);
+      }
     } finally {
       setIsLoadingTree(false);
     }
 
     try {
-      const branch = await invoke<string | null>('get_git_branch', { path });
+      const branch = await invoke<string | null>('get_git_branch', { path: resolvedPath });
       setBranchName(branch || 'no-git');
     } catch {
       setBranchName('local');
