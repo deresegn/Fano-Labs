@@ -297,11 +297,12 @@ function App() {
           );
         }
       );
-    } catch {
+    } catch (err: any) {
+      const detail = String(err?.message || err || 'unknown error');
       updateActiveThreadMessages((messages) =>
         messages.map((m) =>
           m.id === assistantId
-            ? { ...m, content: 'Sorry, I hit an error while generating this response.' }
+            ? { ...m, content: `Sorry, I hit an error while generating this response.\n\n${detail}` }
             : m
         )
       );

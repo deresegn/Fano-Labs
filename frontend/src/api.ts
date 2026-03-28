@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core';
+
 type GenReq = { prompt: string; model?: string; language?: string; context?: string };
 type GenRes = { code: string; error?: string };
 
@@ -36,6 +38,27 @@ async function fetchOllamaModels(): Promise<Array<{id:string;name:string;descrip
   return Array.from(unique.values());
 }
 
+async function nativeOllamaModels(): Promise<Array<{id:string;name:string;description?:string}>> {
+  if (!IS_TAURI) return [];
+  const names = await invoke<string[]>('list_local_models');
+  if (!Array.isArray(names)) return [];
+  return names
+    .map((name) => String(name || '').trim())
+    .filter(Boolean)
+    .map((id) => ({ id, name: id, description: 'Local Ollama' }));
+}
+
+async function nativeOllamaGenerate(req: GenReq): Promise<string> {
+  if (!IS_TAURI) throw new Error('native_ollama_unavailable');
+  const out = await invoke<string>('generate_with_ollama', {
+    prompt: req.prompt,
+    model: req.model ?? 'qwen2.5-coder:0.5b'
+  });
+  const text = String(out || '').trim();
+  if (!text) throw new Error('empty_native_ollama_response');
+  return text;
+}
+
 export async function generateCode(req: GenReq): Promise<GenRes> {
   try {
     if (USE_OLLAMA) {
@@ -62,6 +85,12 @@ export async function generateCode(req: GenReq): Promise<GenRes> {
         const j: any = await r.json();
         return { code: (j?.response ?? '').toString().trim() };
       } catch {
+        try {
+          const native = await nativeOllamaGenerate(req);
+          return { code: native };
+        } catch {
+          // fallback below
+        }
         const or = await fetch(`${ollama}/api/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -85,7 +114,17 @@ export async function getAvailableModels(): Promise<Array<{id:string;name:string
   try {
     const unique = new Map<string, {id:string;name:string;description?:string}>();
 
+    if (IS_TAURI) {
+      try {
+        const native = await nativeOllamaModels();
+        native.forEach((m) => unique.set(m.id, m));
+      } catch {
+        // ignore
+      }
+    }
+
     if (USE_OLLAMA) {
+      if (unique.size > 0) return Array.from(unique.values());
       return await fetchOllamaModels();
     } else {
       const r = await fetch(`${backend}/models`);
@@ -180,6 +219,15 @@ export async function streamGenerate(
     if (!hadDelta) throw new Error('stream ended without content');
   } catch {
     // Tauri fallback (or transient stream failures): one-shot generation
+    try {
+      const native = await nativeOllamaGenerate(req as any);
+      if (native) {
+        onDelta(native);
+        return;
+      }
+    } catch {
+      // ignore
+    }
     const one = await generateCode(req as any);
     if (one.code) {
       onDelta(one.code);

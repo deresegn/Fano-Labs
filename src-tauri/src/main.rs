@@ -192,6 +192,90 @@ fn resolve_node_bin() -> Option<PathBuf> {
     None
 }
 
+fn resolve_ollama_bin() -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
+        candidates.push(
+            PathBuf::from(local_app_data)
+                .join("Programs")
+                .join("Ollama")
+                .join("ollama.exe"),
+        );
+    }
+    if let Ok(program_files) = env::var("ProgramFiles") {
+        candidates.push(PathBuf::from(program_files).join("Ollama").join("ollama.exe"));
+    }
+    if let Ok(program_files_x86) = env::var("ProgramFiles(x86)") {
+        candidates.push(PathBuf::from(program_files_x86).join("Ollama").join("ollama.exe"));
+    }
+
+    for candidate in candidates {
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+#[tauri::command]
+fn list_local_models() -> Result<Vec<String>, String> {
+    let ollama_bin = resolve_ollama_bin().unwrap_or_else(|| PathBuf::from("ollama"));
+    let output = Command::new(ollama_bin)
+        .args(["list"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("failed_to_run_ollama: {}", e))?;
+
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(format!("ollama_list_failed: {}", err));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut models: Vec<String> = Vec::new();
+    for line in stdout.lines().skip(1) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(name) = trimmed.split_whitespace().next() {
+            if !name.is_empty() {
+                models.push(name.to_string());
+            }
+        }
+    }
+    Ok(models)
+}
+
+#[tauri::command]
+fn generate_with_ollama(prompt: String, model: Option<String>) -> Result<String, String> {
+    let selected = model
+        .unwrap_or_else(|| "qwen2.5-coder:0.5b".to_string())
+        .trim()
+        .to_string();
+    if selected.is_empty() {
+        return Err("invalid_model".to_string());
+    }
+
+    let ollama_bin = resolve_ollama_bin().unwrap_or_else(|| PathBuf::from("ollama"));
+    let output = Command::new(ollama_bin)
+        .args(["run", &selected, &prompt])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("failed_to_run_ollama: {}", e))?;
+
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(format!("ollama_generate_failed: {}", err));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
 fn start_embedded_backend(app: &tauri::AppHandle) {
     let resource_dir = match app.path().resource_dir() {
         Ok(path) => path,
@@ -253,7 +337,9 @@ fn main() {
             normalize_workspace_path,
             list_directory_tree,
             list_directory_flat,
-            get_git_branch
+            get_git_branch,
+            list_local_models,
+            generate_with_ollama
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
