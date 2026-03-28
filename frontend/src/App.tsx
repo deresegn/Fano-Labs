@@ -361,6 +361,23 @@ function App() {
       }
     }
 
+    const architectureFormat = wantsRepoAnalysis
+      ? [
+          '',
+          'When the user asks to scan/explain architecture, your response MUST follow exactly these sections in order:',
+          '1) Observed (with file refs)',
+          'Use bullets. Include concrete evidence from provided tree/snapshot. Add file refs like `frontend/src/App.tsx`.',
+          '2) Inferred',
+          'List reasonable inferences separately from observed facts.',
+          '3) Open Questions',
+          'List missing info needed for higher confidence.',
+          '4) Next files to inspect',
+          'Give 5-10 specific paths to inspect next.',
+          'Do not output generic git setup instructions.',
+          'Do not claim repository is private/inaccessible when context is provided.'
+        ].join('\n')
+      : '';
+
     const workspaceContext = [
       'You are FANO-LABS local coding assistant.',
       'You only have access to the workspace context provided below.',
@@ -371,7 +388,8 @@ function App() {
       `Active file: ${activeFilePath || 'none'}`,
       'Visible workspace tree:',
       treeLines.length > 0 ? treeLines.join('\n') : '(tree unavailable)',
-      repoSnapshot ? `\nRepository snapshot:\n${repoSnapshot}` : ''
+      repoSnapshot ? `\nRepository snapshot:\n${repoSnapshot}` : '',
+      architectureFormat
     ].join('\n');
 
     try {
