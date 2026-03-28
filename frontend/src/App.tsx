@@ -41,6 +41,22 @@ const getProjectName = (path: string) => {
   return parts[parts.length - 1] || 'Untitled Project';
 };
 
+const flattenTree = (nodes: FileNode[], prefix = '', depth = 0, limit = 120): string[] => {
+  if (depth > 3 || limit <= 0) return [];
+  const lines: string[] = [];
+  for (const node of nodes) {
+    if (lines.length >= limit) break;
+    const marker = node.is_dir ? '[D]' : '[F]';
+    lines.push(`${prefix}${marker} ${node.name}`);
+    if (node.is_dir && node.children.length > 0) {
+      const remaining = limit - lines.length;
+      const nested = flattenTree(node.children, `${prefix}  `, depth + 1, remaining);
+      lines.push(...nested);
+    }
+  }
+  return lines;
+};
+
 function App() {
   const [editorState, setEditorState] = useState<EditorState>({
     code: '// Welcome to FANO-LABS AI Code Editor\n// Open a project and start building.\n\nfunction hello() {\n  console.log("Hello, World!");\n}',
@@ -106,15 +122,55 @@ function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    let attempts = 0;
+
     const loadModels = async () => {
-      const models = await getAvailableModels();
-      const options = models.map((m) => ({ id: m.id, name: m.name }));
-      setModelOptions(options);
-      if (options.length > 0 && !options.some((m) => m.id === editorState.selectedModel)) {
-        setEditorState((prev) => ({ ...prev, selectedModel: options[0].id }));
+      attempts += 1;
+      const unique = new Map<string, { id: string; name: string }>();
+
+      if (isTauri()) {
+        try {
+          const native = await invoke<string[]>('list_local_models');
+          if (Array.isArray(native)) {
+            native
+              .map((n) => String(n || '').trim())
+              .filter(Boolean)
+              .forEach((id) => unique.set(id, { id, name: id }));
+          }
+        } catch {
+          // ignore and continue to API fallback
+        }
+      }
+
+      try {
+        const models = await getAvailableModels();
+        models.forEach((m) => {
+          const id = String(m.id || '').trim();
+          if (!id) return;
+          unique.set(id, { id, name: m.name || id });
+        });
+      } catch {
+        // ignore
+      }
+
+      const options = Array.from(unique.values());
+      if (!cancelled && options.length > 0) {
+        setModelOptions(options);
+        if (!options.some((m) => m.id === editorState.selectedModel)) {
+          setEditorState((prev) => ({ ...prev, selectedModel: options[0].id }));
+        }
+      }
+
+      if (!cancelled && options.length <= 1 && attempts < 6) {
+        window.setTimeout(loadModels, 2500);
       }
     };
+
     loadModels();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -284,10 +340,22 @@ function App() {
 
     updateActiveThreadMessages((messages) => [...messages, userMessage, assistantMessage]);
 
+    const treeLines = flattenTree(fileTree, '', 0, 120);
+    const workspaceContext = [
+      'You are FANO-LABS local coding assistant.',
+      'You only have access to the workspace context provided below.',
+      'Never say the repository is private/inaccessible if a file tree is provided.',
+      'If details are missing, ask for a specific file to open next.',
+      `Workspace root: ${workspacePath || 'unknown'}`,
+      `Active file: ${activeFilePath || 'none'}`,
+      'Visible workspace tree:',
+      treeLines.length > 0 ? treeLines.join('\n') : '(tree unavailable)'
+    ].join('\n');
+
     try {
       await streamGenerate(
         {
-          prompt: `You are assisting with file: ${activeFilePath || 'unknown file'}\n\nUser request: ${prompt}`,
+          prompt: `${workspaceContext}\n\nUser request:\n${prompt}`,
           model: editorState.selectedModel,
           language: editorState.language
         },

@@ -24,6 +24,20 @@ struct FileNode {
 
 struct BackendState(Mutex<Option<Child>>);
 
+fn should_skip_entry(name: &str) -> bool {
+    matches!(
+        name,
+        ".git"
+            | ".idea"
+            | ".vscode"
+            | "node_modules"
+            | "target"
+            | "dist"
+            | ".next"
+            | ".cache"
+    )
+}
+
 fn normalize_input_path(input: &str) -> String {
     input
         .trim()
@@ -82,6 +96,9 @@ fn read_tree(path: &Path, depth: usize) -> Vec<FileNode> {
             .file_name()
             .to_string_lossy()
             .to_string();
+        if should_skip_entry(&name) {
+            continue;
+        }
         let is_dir = entry_path.is_dir();
         let children = if is_dir { read_tree(&entry_path, depth + 1) } else { Vec::new() };
 
@@ -103,6 +120,9 @@ fn read_shallow(path: &Path) -> Result<Vec<FileNode>, String> {
     for entry in entries.flatten().take(400) {
         let entry_path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
+        if should_skip_entry(&name) {
+            continue;
+        }
         let is_dir = entry_path.is_dir();
         nodes.push(FileNode {
             name,
