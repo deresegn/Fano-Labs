@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { EditorState } from '../../shared/types';
 import { BackendConnection } from './features/backend/BackendConnection';
 import { EditorFeature } from './features/editor/EditorFeature';
-import { streamGenerate } from './api';
+import { getAvailableModels, streamGenerate } from './api';
 import './App.css';
 
 type FileNode = {
@@ -32,6 +32,7 @@ const MAX_RECENT_PROJECTS = 5;
 const isTauri = () =>
   typeof window !== 'undefined' &&
   (typeof (window as any).__TAURI__ !== 'undefined' ||
+    typeof (window as any).__TAURI_INTERNALS__ !== 'undefined' ||
     String(window.location.protocol || '').startsWith('tauri'));
 
 const getProjectName = (path: string) => {
@@ -51,8 +52,10 @@ function App() {
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
+  const [isLoadingTree, setIsLoadingTree] = useState<boolean>(false);
   const [activeFilePath, setActiveFilePath] = useState<string>('');
   const [branchName, setBranchName] = useState<string>('unknown');
+  const [modelOptions, setModelOptions] = useState<Array<{ id: string; name: string }>>([]);
 
   const [rightPaneWidth, setRightPaneWidth] = useState<number>(380);
   const [isRightPaneOpen, setIsRightPaneOpen] = useState<boolean>(true);
@@ -102,6 +105,18 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const loadModels = async () => {
+      const models = await getAvailableModels();
+      const options = models.map((m) => ({ id: m.id, name: m.name }));
+      setModelOptions(options);
+      if (options.length > 0 && !options.some((m) => m.id === editorState.selectedModel)) {
+        setEditorState((prev) => ({ ...prev, selectedModel: options[0].id }));
+      }
+    };
+    loadModels();
+  }, []);
+
+  useEffect(() => {
     chatMessagesRef.current?.scrollTo({
       top: chatMessagesRef.current.scrollHeight,
       behavior: 'smooth'
@@ -140,28 +155,39 @@ function App() {
     setWorkspacePath(path);
     appendRecentProject(path);
     setActiveFilePath(path);
-
-    if (!isTauri()) {
-      setBranchName('local');
-      return;
-    }
+    setIsLoadingTree(true);
+    setFileTree([]);
 
     try {
       const nodes = await invoke<FileNode[]>('list_directory_tree', { path });
       setFileTree(nodes || []);
     } catch {
       setFileTree([]);
+    } finally {
+      setIsLoadingTree(false);
     }
 
     try {
       const branch = await invoke<string | null>('get_git_branch', { path });
       setBranchName(branch || 'no-git');
     } catch {
-      setBranchName('unknown');
+      setBranchName('local');
     }
   };
 
   const handleOpenFolder = async () => {
+    if (isTauri()) {
+      try {
+        const picked = await invoke<string | null>('open_folder_dialog');
+        if (picked) {
+          await loadWorkspace(picked);
+        }
+        return;
+      } catch {
+        // fall through to browser fallback
+      }
+    }
+
     if (!isTauri()) {
       try {
         const picker = (window as any).showDirectoryPicker;
@@ -179,10 +205,6 @@ function App() {
       }
       window.alert('Use the desktop app build to pick folders with full filesystem paths.');
       return;
-    }
-    const picked = await invoke<string | null>('open_folder_dialog');
-    if (picked) {
-      await loadWorkspace(picked);
     }
   };
 
@@ -332,7 +354,15 @@ function App() {
             <div className="PaneHeader">
               <strong>{getProjectName(workspacePath).toUpperCase()}</strong>
             </div>
-            <div className="PaneContent">{renderTree(fileTree)}</div>
+            <div className="PaneContent">
+              {isLoadingTree ? (
+                <div className="PaneEmpty">Loading folder tree...</div>
+              ) : fileTree.length > 0 ? (
+                renderTree(fileTree)
+              ) : (
+                <div className="PaneEmpty">No files found or folder access unavailable.</div>
+              )}
+            </div>
           </aside>
 
           <section className="CenterPane">
@@ -415,7 +445,15 @@ function App() {
                         setEditorState((prev) => ({ ...prev, selectedModel: e.target.value }))
                       }
                     >
-                      <option value={editorState.selectedModel}>{editorState.selectedModel}</option>
+                      {modelOptions.length > 0 ? (
+                        modelOptions.map((model) => (
+                          <option key={model.id} value={model.id}>
+                            {model.name}
+                          </option>
+                        ))
+                      ) : (
+                        <option value={editorState.selectedModel}>{editorState.selectedModel}</option>
+                      )}
                     </select>
                     <textarea
                       value={chatInput}

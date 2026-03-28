@@ -11,6 +11,7 @@ const backend = BACKEND_URL.replace(/\/$/, '');
 const ollama = OLLAMA_URL.replace(/\/$/, '');
 const IS_TAURI = (
   typeof (window as any).__TAURI__ !== 'undefined' ||
+  typeof (window as any).__TAURI_INTERNALS__ !== 'undefined' ||
   (typeof window !== 'undefined' &&
     (window as any).location &&
     (((window as any).location.protocol === 'tauri:') ||
@@ -86,42 +87,45 @@ export async function streamGenerate(
   req: { prompt: string; model?: string; language?: string },
   onDelta: (chunk: string) => void
 ): Promise<void> {
-  // Tauri release fallback: use one-shot to avoid aborted SSE in some environments
-  if (IS_TAURI) {
-    const one = await generateCode(req as any);
-    if (one.code) onDelta(one.code);
-    return;
-  }
+  try {
+    const r = await fetch(`${backend}/generate/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req)
+    });
+    if (!r.ok || !r.body) throw new Error(`stream failed: ${r.status}`);
 
-  const r = await fetch(`${backend}/generate/stream`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req)
-  });
-  if (!r.ok || !r.body) throw new Error(`stream failed: ${r.status}`);
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
 
-  const reader = r.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = '';
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-
-    const parts = buf.split('\n\n');
-    buf = parts.pop() || '';
-    for (const evt of parts) {
-      const lines = evt.split('\n');
-      const type = lines[0].startsWith('event:') ? lines[0].slice(6).trim() : 'message';
-      const dataLine = lines.find(l => l.startsWith('data:'));
-      const data = dataLine ? dataLine.slice(5).trim() : '';
-      if (type === 'done') return;
-      if (data) {
-        try {
-          const j = JSON.parse(data);
-          if (j.delta) onDelta(j.delta);
-        } catch { /* ignore */ }
+      const parts = buf.split('\n\n');
+      buf = parts.pop() || '';
+      for (const evt of parts) {
+        const lines = evt.split('\n');
+        const type = lines[0].startsWith('event:') ? lines[0].slice(6).trim() : 'message';
+        const dataLine = lines.find(l => l.startsWith('data:'));
+        const data = dataLine ? dataLine.slice(5).trim() : '';
+        if (type === 'done') return;
+        if (data) {
+          try {
+            const j = JSON.parse(data);
+            if (j.delta) onDelta(j.delta);
+          } catch { /* ignore */ }
+        }
       }
     }
+  } catch {
+    // Tauri fallback (or transient stream failures): one-shot generation
+    if (IS_TAURI) {
+      const one = await generateCode(req as any);
+      if (one.code) onDelta(one.code);
+      return;
+    }
+    throw new Error('stream generation failed');
   }
 }
