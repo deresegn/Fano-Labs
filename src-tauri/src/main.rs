@@ -4,7 +4,9 @@
 use serde::Serialize;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
+use tauri::Manager;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -18,6 +20,8 @@ struct FileNode {
     is_dir: bool,
     children: Vec<FileNode>,
 }
+
+struct BackendState(Mutex<Option<Child>>);
 
 fn read_tree(path: &Path, depth: usize) -> Vec<FileNode> {
     if depth > 4 {
@@ -115,8 +119,60 @@ fn get_git_branch(path: String) -> Option<String> {
     if branch.is_empty() { None } else { Some(branch) }
 }
 
+fn start_embedded_backend(app: &tauri::AppHandle) {
+    let resource_dir = match app.path().resource_dir() {
+        Ok(path) => path,
+        Err(err) => {
+            eprintln!("backend autostart: unable to resolve resource dir: {}", err);
+            return;
+        }
+    };
+
+    let backend_dir = resource_dir.join("backend");
+    let entry = backend_dir.join("dist").join("src").join("index.js");
+    if !entry.exists() {
+        eprintln!("backend autostart: entry not found at {}", entry.display());
+        return;
+    }
+
+    let mut cmd = Command::new("node");
+    cmd.arg(&entry)
+        .current_dir(&backend_dir)
+        .env("NODE_ENV", "production")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    match cmd.spawn() {
+        Ok(child) => {
+            if let Ok(mut slot) = app.state::<BackendState>().0.lock() {
+                *slot = Some(child);
+            }
+        }
+        Err(err) => {
+            eprintln!("backend autostart: failed to spawn node process: {}", err);
+        }
+    }
+}
+
+fn stop_embedded_backend(app: &tauri::AppHandle) {
+    if let Ok(mut slot) = app.state::<BackendState>().0.lock() {
+        if let Some(mut child) = slot.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
 fn main() {
     tauri::Builder::default()
+        .setup(|app| {
+            app.manage(BackendState(Mutex::new(None)));
+            if !cfg!(debug_assertions) {
+                start_embedded_backend(app.handle());
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             open_folder_dialog,
@@ -124,6 +180,11 @@ fn main() {
             list_directory_flat,
             get_git_branch
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                stop_embedded_backend(app);
+            }
+        });
 } 
