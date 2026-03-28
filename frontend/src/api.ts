@@ -50,36 +50,59 @@ export async function generateCode(req: GenReq): Promise<GenRes> {
 
 export async function getAvailableModels(): Promise<Array<{id:string;name:string;description?:string}>> {
   try {
+    const unique = new Map<string, {id:string;name:string;description?:string}>();
+
     if (USE_OLLAMA) {
       const r = await fetch(`${ollama}/api/tags`);
       if (!r.ok) throw new Error(`ollama ${r.status}`);
       const j: any = await r.json();
       const models = Array.isArray(j?.models) ? j.models : [];
-      return models.map((m: any) => ({
-        id: m?.name,
-        name: m?.name,
-        description: m?.details?.family || 'Ollama'
-      }));
+      models.forEach((m: any) => {
+        const id = String(m?.name || '').trim();
+        if (!id) return;
+        unique.set(id, {
+          id,
+          name: id,
+          description: m?.details?.family || 'Ollama'
+        });
+      });
+      return Array.from(unique.values());
     } else {
       const r = await fetch(`${backend}/models`);
       if (!r.ok) throw new Error(`backend ${r.status}`);
       const j: any = await r.json();
       const names: string[] = j?.models ?? [];
-      return names.map((name) => ({ id: name, name }));
+      names.forEach((name) => {
+        const id = String(name || '').trim();
+        if (!id) return;
+        unique.set(id, { id, name: id });
+      });
+
+      // Secondary source: direct Ollama tags when available, to avoid stale backend caches.
+      try {
+        const or = await fetch(`${ollama}/api/tags`);
+        if (or.ok) {
+          const oj: any = await or.json();
+          const omodels = Array.isArray(oj?.models) ? oj.models : [];
+          omodels.forEach((m: any) => {
+            const id = String(m?.name || '').trim();
+            if (!id) return;
+            unique.set(id, {
+              id,
+              name: id,
+              description: m?.details?.family || 'Ollama'
+            });
+          });
+        }
+      } catch {
+        // ignore direct ollama lookup failures
+      }
+
+      if (unique.size > 0) return Array.from(unique.values());
+      return [{ id: 'qwen2.5-coder:0.5b', name: 'qwen2.5-coder:0.5b' }];
     }
   } catch {
-    return [{ id: 'codellama:7b-code', name: 'CodeLlama 7B' }];
-  }
-}
-
-export async function checkHealth(): Promise<{ok:boolean;status?:string}> {
-  const url = USE_OLLAMA ? `${ollama}/api/tags` : `${backend}/health`;
-  try {
-    const r = await fetch(url, { cache: 'no-store' });
-    if (!r.ok) return { ok: false };
-    return { ok: true, status: 'healthy' };
-  } catch {
-    return { ok: false };
+    return [{ id: 'qwen2.5-coder:0.5b', name: 'qwen2.5-coder:0.5b' }];
   }
 }
 
@@ -87,6 +110,7 @@ export async function streamGenerate(
   req: { prompt: string; model?: string; language?: string },
   onDelta: (chunk: string) => void
 ): Promise<void> {
+  let hadDelta = false;
   try {
     const r = await fetch(`${backend}/generate/stream`, {
       method: 'POST',
@@ -110,22 +134,42 @@ export async function streamGenerate(
         const type = lines[0].startsWith('event:') ? lines[0].slice(6).trim() : 'message';
         const dataLine = lines.find(l => l.startsWith('data:'));
         const data = dataLine ? dataLine.slice(5).trim() : '';
-        if (type === 'done') return;
+        if (type === 'done') {
+          if (!hadDelta) throw new Error('stream returned no content');
+          return;
+        }
+        if (type === 'error') throw new Error(data || 'stream_error');
         if (data) {
           try {
             const j = JSON.parse(data);
-            if (j.delta) onDelta(j.delta);
+            if (j.delta) {
+              hadDelta = true;
+              onDelta(j.delta);
+            }
           } catch { /* ignore */ }
         }
       }
     }
+
+    if (!hadDelta) throw new Error('stream ended without content');
   } catch {
     // Tauri fallback (or transient stream failures): one-shot generation
-    if (IS_TAURI) {
-      const one = await generateCode(req as any);
-      if (one.code) onDelta(one.code);
+    const one = await generateCode(req as any);
+    if (one.code) {
+      onDelta(one.code);
       return;
     }
-    throw new Error('stream generation failed');
+    throw new Error(one.error || 'stream generation failed');
   }
 }
+export async function checkHealth(): Promise<{ok:boolean;status?:string}> {
+  const url = USE_OLLAMA ? `${ollama}/api/tags` : `${backend}/health`;
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) return { ok: false };
+    return { ok: true, status: 'healthy' };
+  } catch {
+    return { ok: false };
+  }
+}
+

@@ -51,6 +51,24 @@ fn read_tree(path: &Path, depth: usize) -> Vec<FileNode> {
     nodes
 }
 
+fn read_shallow(path: &Path) -> Result<Vec<FileNode>, String> {
+    let entries = fs::read_dir(path).map_err(|e| format!("read_dir_failed: {}", e))?;
+    let mut nodes = Vec::new();
+    for entry in entries.flatten().take(400) {
+        let entry_path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        let is_dir = entry_path.is_dir();
+        nodes.push(FileNode {
+            name,
+            path: entry_path.to_string_lossy().to_string(),
+            is_dir,
+            children: Vec::new(),
+        });
+    }
+    nodes.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    Ok(nodes)
+}
+
 #[tauri::command]
 fn open_folder_dialog() -> Option<String> {
     let default_dir = std::env::var("USERPROFILE")
@@ -74,6 +92,15 @@ fn list_directory_tree(path: String) -> Result<Vec<FileNode>, String> {
 }
 
 #[tauri::command]
+fn list_directory_flat(path: String) -> Result<Vec<FileNode>, String> {
+    let root = Path::new(&path);
+    if !root.exists() || !root.is_dir() {
+        return Err("Invalid folder path".to_string());
+    }
+    read_shallow(root)
+}
+
+#[tauri::command]
 fn get_git_branch(path: String) -> Option<String> {
     let output = Command::new("git")
         .args(["-C", &path, "branch", "--show-current"])
@@ -94,6 +121,7 @@ fn main() {
             greet,
             open_folder_dialog,
             list_directory_tree,
+            list_directory_flat,
             get_git_branch
         ])
         .run(tauri::generate_context!())

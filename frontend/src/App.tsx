@@ -53,6 +53,7 @@ function App() {
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [isLoadingTree, setIsLoadingTree] = useState<boolean>(false);
+  const [treeError, setTreeError] = useState<string>('');
   const [activeFilePath, setActiveFilePath] = useState<string>('');
   const [branchName, setBranchName] = useState<string>('unknown');
   const [modelOptions, setModelOptions] = useState<Array<{ id: string; name: string }>>([]);
@@ -157,12 +158,19 @@ function App() {
     setActiveFilePath(path);
     setIsLoadingTree(true);
     setFileTree([]);
+    setTreeError('');
 
     try {
       const nodes = await invoke<FileNode[]>('list_directory_tree', { path });
-      setFileTree(nodes || []);
-    } catch {
+      if (Array.isArray(nodes) && nodes.length > 0) {
+        setFileTree(nodes);
+      } else {
+        const flat = await invoke<FileNode[]>('list_directory_flat', { path });
+        setFileTree(Array.isArray(flat) ? flat : []);
+      }
+    } catch (e: any) {
       setFileTree([]);
+      setTreeError(String(e?.message || e || 'Failed to load directory tree'));
     } finally {
       setIsLoadingTree(false);
     }
@@ -360,7 +368,10 @@ function App() {
               ) : fileTree.length > 0 ? (
                 renderTree(fileTree)
               ) : (
-                <div className="PaneEmpty">No files found or folder access unavailable.</div>
+                <div className="PaneEmpty">
+                  No files found or folder access unavailable.
+                  {treeError ? <div className="PaneError">{treeError}</div> : null}
+                </div>
               )}
             </div>
           </aside>
