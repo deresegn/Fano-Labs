@@ -441,30 +441,43 @@ fn parse_env_value(raw: &str) -> String {
 }
 
 fn load_provider_env_vars(app: &tauri::AppHandle) -> Vec<(String, String)> {
-    let config_dir = match app.path().app_config_dir() {
-        Ok(path) => path,
-        Err(_) => return Vec::new(),
-    };
-    let env_file = config_dir.join(PROVIDER_ENV_FILE);
-    let content = match fs::read_to_string(&env_file) {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
+    let mut contents: Vec<String> = Vec::new();
+    if let Ok(config_dir) = app.path().app_config_dir() {
+        let env_file = config_dir.join(PROVIDER_ENV_FILE);
+        if let Ok(v) = fs::read_to_string(env_file) {
+            contents.push(v);
+        }
+    }
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        for p in [
+            resource_dir.join(PROVIDER_ENV_FILE),
+            resource_dir.join("_up_").join(PROVIDER_ENV_FILE),
+        ] {
+            if let Ok(v) = fs::read_to_string(p) {
+                contents.push(v);
+            }
+        }
+    }
+    if contents.is_empty() {
+        return Vec::new();
+    }
 
     let mut pairs: Vec<(String, String)> = Vec::new();
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        let mut parts = trimmed.splitn(2, '=');
-        let key = parts.next().unwrap_or("").trim().to_string();
-        let value = parse_env_value(parts.next().unwrap_or(""));
-        if key.is_empty() || value.is_empty() {
-            continue;
-        }
-        if PROVIDER_ENV_KEYS.iter().any(|allowed| allowed == &key) {
-            pairs.push((key, value));
+    for content in contents {
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            let mut parts = trimmed.splitn(2, '=');
+            let key = parts.next().unwrap_or("").trim().to_string();
+            let value = parse_env_value(parts.next().unwrap_or(""));
+            if key.is_empty() || value.is_empty() {
+                continue;
+            }
+            if PROVIDER_ENV_KEYS.iter().any(|allowed| allowed == &key) {
+                pairs.push((key, value));
+            }
         }
     }
     pairs
@@ -578,10 +591,13 @@ fn start_embedded_backend(app: &tauri::AppHandle) {
 
     // Tauri resources can be bundled in different layouts depending on packager:
     // - <resources>/backend/dist/src/index.js
+    // - <resources>/_up_/backend/dist/src/index.js (NSIS updater layout)
     // - <resources>/resources/backend/dist/src/index.js
     // - <resources>/dist/src/index.js
     let backend_dirs = vec![
         resource_dir.join("backend"),
+        resource_dir.join("_up_").join("backend"),
+        resource_dir.join("_up_"),
         resource_dir.join("resources").join("backend"),
         resource_dir.join("resources"),
         resource_dir.clone(),
