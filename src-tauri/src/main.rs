@@ -578,8 +578,14 @@ fn start_embedded_backend(app: &tauri::AppHandle) {
 
     // Tauri resources can be bundled in different layouts depending on packager:
     // - <resources>/backend/dist/src/index.js
+    // - <resources>/resources/backend/dist/src/index.js
     // - <resources>/dist/src/index.js
-    let backend_dirs = vec![resource_dir.join("backend"), resource_dir.clone()];
+    let backend_dirs = vec![
+        resource_dir.join("backend"),
+        resource_dir.join("resources").join("backend"),
+        resource_dir.join("resources"),
+        resource_dir.clone(),
+    ];
     let mut backend_dir: Option<PathBuf> = None;
     let mut entry: Option<PathBuf> = None;
 
@@ -607,6 +613,14 @@ fn start_embedded_backend(app: &tauri::AppHandle) {
                 "backend autostart: no backend entry found under {}",
                 resource_dir.display()
             );
+            if let Ok(entries) = fs::read_dir(&resource_dir) {
+                for ent in entries.flatten().take(40) {
+                    append_backend_startup_log(
+                        app,
+                        &format!("resource_entry: {}", ent.path().display()),
+                    );
+                }
+            }
             append_backend_startup_log(
                 app,
                 &format!("entry_not_found under {}", resource_dir.display()),
