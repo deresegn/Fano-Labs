@@ -13,9 +13,9 @@ type GenRes = { code: string; error?: string };
 
 const USE_OLLAMA = String((import.meta as any).env?.VITE_USE_OLLAMA ?? 'false') === 'true';
 const OLLAMA_URL =
-  (import.meta as any).env?.VITE_OLLAMA_URL ?? 'http://127.0.0.1:11434';
+  (import.meta as any).env?.VITE_OLLAMA_URL ?? 'http://localhost:11434';
 const BACKEND_URL =
-  (import.meta as any).env?.VITE_BACKEND_URL ?? 'http://127.0.0.1:3001';
+  (import.meta as any).env?.VITE_BACKEND_URL ?? 'http://localhost:3001';
 
 const backend = BACKEND_URL.replace(/\/$/, '');
 const ollama = OLLAMA_URL.replace(/\/$/, '');
