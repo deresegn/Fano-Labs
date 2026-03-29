@@ -166,6 +166,20 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const timer = window.setInterval(() => {
+      refreshProviders();
+    }, 12000);
+    const onFocus = () => {
+      refreshProviders();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isTauri()) return;
     invoke<string>('get_provider_config_path')
       .then((p) => setProviderConfigPath(String(p || '')))
