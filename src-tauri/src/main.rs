@@ -537,12 +537,40 @@ fn start_embedded_backend(app: &tauri::AppHandle) {
         }
     };
 
-    let backend_dir = resource_dir.join("backend");
-    let entry = backend_dir.join("dist").join("src").join("index.js");
-    if !entry.exists() {
-        eprintln!("backend autostart: entry not found at {}", entry.display());
-        return;
+    // Tauri resources can be bundled in different layouts depending on packager:
+    // - <resources>/backend/dist/src/index.js
+    // - <resources>/dist/src/index.js
+    let backend_dirs = vec![resource_dir.join("backend"), resource_dir.clone()];
+    let mut backend_dir: Option<PathBuf> = None;
+    let mut entry: Option<PathBuf> = None;
+
+    for dir in backend_dirs {
+        let candidates = vec![
+            dir.join("dist").join("src").join("index.js"),
+            dir.join("dist").join("server.js"),
+        ];
+        for c in candidates {
+            if c.exists() {
+                backend_dir = Some(dir.clone());
+                entry = Some(c);
+                break;
+            }
+        }
+        if entry.is_some() {
+            break;
+        }
     }
+
+    let (backend_dir, entry) = match (backend_dir, entry) {
+        (Some(d), Some(e)) => (d, e),
+        _ => {
+            eprintln!(
+                "backend autostart: no backend entry found under {}",
+                resource_dir.display()
+            );
+            return;
+        }
+    };
 
     let node_bin = resolve_node_bin().unwrap_or_else(|| PathBuf::from("node"));
     let mut cmd = Command::new(node_bin);
