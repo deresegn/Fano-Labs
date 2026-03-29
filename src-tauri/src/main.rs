@@ -566,6 +566,14 @@ fn generate_with_ollama(prompt: String, model: Option<String>) -> Result<String,
 }
 
 fn start_embedded_backend(app: &tauri::AppHandle) {
+    fn de_verbatim(path: &Path) -> PathBuf {
+        let s = path.to_string_lossy().to_string();
+        if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            return PathBuf::from(stripped);
+        }
+        path.to_path_buf()
+    }
+
     fn append_backend_startup_log(app: &tauri::AppHandle, message: &str) {
         let app_data = match app.path().app_data_dir() {
             Ok(p) => p,
@@ -646,6 +654,21 @@ fn start_embedded_backend(app: &tauri::AppHandle) {
     };
 
     let node_bin = resolve_node_bin().unwrap_or_else(|| PathBuf::from("node"));
+    let backend_dir = de_verbatim(&backend_dir);
+    let entry = de_verbatim(&entry);
+    let app_data_dir = app.path().app_data_dir().ok();
+    let stdout_log = app_data_dir
+        .as_ref()
+        .map(|d| d.join("backend-stdout.log"))
+        .unwrap_or_else(|| PathBuf::from("backend-stdout.log"));
+    let stderr_log = app_data_dir
+        .as_ref()
+        .map(|d| d.join("backend-stderr.log"))
+        .unwrap_or_else(|| PathBuf::from("backend-stderr.log"));
+    let _ = stdout_log.parent().map(fs::create_dir_all);
+    let _ = stderr_log.parent().map(fs::create_dir_all);
+    let stdout_file = OpenOptions::new().create(true).append(true).open(&stdout_log).ok();
+    let stderr_file = OpenOptions::new().create(true).append(true).open(&stderr_log).ok();
     append_backend_startup_log(
         app,
         &format!(
@@ -661,8 +684,8 @@ fn start_embedded_backend(app: &tauri::AppHandle) {
         .current_dir(&backend_dir)
         .env("NODE_ENV", "production")
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(stdout_file.map(Stdio::from).unwrap_or_else(Stdio::null))
+        .stderr(stderr_file.map(Stdio::from).unwrap_or_else(Stdio::null));
     for (key, value) in provider_env {
         cmd.env(key, value);
     }
