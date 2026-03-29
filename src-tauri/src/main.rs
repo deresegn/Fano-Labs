@@ -5,6 +5,7 @@ use serde::Serialize;
 use std::collections::{HashSet, VecDeque};
 use std::env;
 use std::fs;
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -377,6 +378,29 @@ fn resolve_node_bin() -> Option<PathBuf> {
             return Some(candidate);
         }
     }
+
+    // Fallback: ask Windows PATH resolution.
+    let mut cmd = Command::new("where");
+    cmd.arg("node")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    apply_no_window(&mut cmd);
+    if let Ok(out) = cmd.output() {
+        if out.status.success() {
+            let first = String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .next()
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
+            if !first.is_empty() {
+                let p = PathBuf::from(first);
+                if p.exists() {
+                    return Some(p);
+                }
+            }
+        }
+    }
     None
 }
 
@@ -529,10 +553,25 @@ fn generate_with_ollama(prompt: String, model: Option<String>) -> Result<String,
 }
 
 fn start_embedded_backend(app: &tauri::AppHandle) {
+    fn append_backend_startup_log(app: &tauri::AppHandle, message: &str) {
+        let app_data = match app.path().app_data_dir() {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+        if fs::create_dir_all(&app_data).is_err() {
+            return;
+        }
+        let path = app_data.join("backend-startup.log");
+        if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) {
+            let _ = writeln!(f, "{}", message);
+        }
+    }
+
     let resource_dir = match app.path().resource_dir() {
         Ok(path) => path,
         Err(err) => {
             eprintln!("backend autostart: unable to resolve resource dir: {}", err);
+            append_backend_startup_log(app, &format!("resource_dir_error: {}", err));
             return;
         }
     };
@@ -568,11 +607,24 @@ fn start_embedded_backend(app: &tauri::AppHandle) {
                 "backend autostart: no backend entry found under {}",
                 resource_dir.display()
             );
+            append_backend_startup_log(
+                app,
+                &format!("entry_not_found under {}", resource_dir.display()),
+            );
             return;
         }
     };
 
     let node_bin = resolve_node_bin().unwrap_or_else(|| PathBuf::from("node"));
+    append_backend_startup_log(
+        app,
+        &format!(
+            "starting backend: node='{}' entry='{}' cwd='{}'",
+            node_bin.display(),
+            entry.display(),
+            backend_dir.display()
+        ),
+    );
     let mut cmd = Command::new(node_bin);
     let provider_env = load_provider_env_vars(app);
     cmd.arg(&entry)
@@ -588,12 +640,14 @@ fn start_embedded_backend(app: &tauri::AppHandle) {
 
     match cmd.spawn() {
         Ok(child) => {
+            append_backend_startup_log(app, "backend_spawn_ok");
             if let Ok(mut slot) = app.state::<BackendState>().0.lock() {
                 *slot = Some(child);
             }
         }
         Err(err) => {
             eprintln!("backend autostart: failed to spawn node process: {}", err);
+            append_backend_startup_log(app, &format!("backend_spawn_error: {}", err));
         }
     }
 }

@@ -112,10 +112,10 @@ export async function getProviderStatus(): Promise<ProviderStatus[]> {
       .filter((p: any) => p.id === 'ollama' || p.id === 'openai' || p.id === 'anthropic' || p.id === 'gemini');
   } catch {
     return [
-      { id: 'ollama', enabled: true, configured: true, reachable: null, detail: 'Local provider.' },
-      { id: 'openai', enabled: false, configured: false, reachable: null, detail: 'Missing OPENAI_API_KEY.' },
-      { id: 'anthropic', enabled: false, configured: false, reachable: null, detail: 'Missing ANTHROPIC_API_KEY.' },
-      { id: 'gemini', enabled: false, configured: false, reachable: null, detail: 'Missing GEMINI_API_KEY.' },
+      { id: 'ollama', enabled: true, configured: true, reachable: false, detail: 'Backend offline (status fetch failed).' },
+      { id: 'openai', enabled: false, configured: false, reachable: false, detail: 'Backend offline (status fetch failed).' },
+      { id: 'anthropic', enabled: false, configured: false, reachable: false, detail: 'Backend offline (status fetch failed).' },
+      { id: 'gemini', enabled: false, configured: false, reachable: false, detail: 'Backend offline (status fetch failed).' },
     ];
   }
 }
