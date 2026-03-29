@@ -25,6 +25,13 @@ struct FileNode {
 }
 
 struct BackendState(Mutex<Option<Child>>);
+const PROVIDER_ENV_FILE: &str = "providers.env";
+const PROVIDER_ENV_KEYS: [&str; 4] = [
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+    "OLLAMA_URL",
+];
 
 fn should_skip_entry(name: &str) -> bool {
     matches!(
@@ -398,6 +405,56 @@ fn resolve_ollama_bin() -> Option<PathBuf> {
     None
 }
 
+fn parse_env_value(raw: &str) -> String {
+    let value = raw.trim().to_string();
+    if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
+        return value[1..value.len() - 1].to_string();
+    }
+    if value.starts_with('\'') && value.ends_with('\'') && value.len() >= 2 {
+        return value[1..value.len() - 1].to_string();
+    }
+    value
+}
+
+fn load_provider_env_vars(app: &tauri::AppHandle) -> Vec<(String, String)> {
+    let config_dir = match app.path().app_config_dir() {
+        Ok(path) => path,
+        Err(_) => return Vec::new(),
+    };
+    let env_file = config_dir.join(PROVIDER_ENV_FILE);
+    let content = match fs::read_to_string(&env_file) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut pairs: Vec<(String, String)> = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let mut parts = trimmed.splitn(2, '=');
+        let key = parts.next().unwrap_or("").trim().to_string();
+        let value = parse_env_value(parts.next().unwrap_or(""));
+        if key.is_empty() || value.is_empty() {
+            continue;
+        }
+        if PROVIDER_ENV_KEYS.iter().any(|allowed| allowed == &key) {
+            pairs.push((key, value));
+        }
+    }
+    pairs
+}
+
+#[tauri::command]
+fn get_provider_config_path(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("config_dir_error: {}", e))?;
+    Ok(dir.join(PROVIDER_ENV_FILE).to_string_lossy().to_string())
+}
+
 #[tauri::command]
 fn list_local_models() -> Result<Vec<String>, String> {
     let ollama_bin = resolve_ollama_bin().unwrap_or_else(|| PathBuf::from("ollama"));
@@ -489,12 +546,16 @@ fn start_embedded_backend(app: &tauri::AppHandle) {
 
     let node_bin = resolve_node_bin().unwrap_or_else(|| PathBuf::from("node"));
     let mut cmd = Command::new(node_bin);
+    let provider_env = load_provider_env_vars(app);
     cmd.arg(&entry)
         .current_dir(&backend_dir)
         .env("NODE_ENV", "production")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    for (key, value) in provider_env {
+        cmd.env(key, value);
+    }
     apply_no_window(&mut cmd);
 
     match cmd.spawn() {
@@ -536,7 +597,8 @@ fn main() {
             get_git_branch,
             read_repo_snapshot,
             list_local_models,
-            generate_with_ollama
+            generate_with_ollama,
+            get_provider_config_path
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

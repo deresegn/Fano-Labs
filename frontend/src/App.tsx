@@ -97,6 +97,7 @@ function App() {
   const [isProviderPanelOpen, setIsProviderPanelOpen] = useState<boolean>(false);
   const [providerTesting, setProviderTesting] = useState<Record<string, boolean>>({});
   const [providerTestResult, setProviderTestResult] = useState<Record<string, string>>({});
+  const [providerConfigPath, setProviderConfigPath] = useState<string>('');
   const [agentMode, setAgentMode] = useState<'chat' | 'repo_analyst' | 'code_editor'>('chat');
 
   const [rightPaneWidth, setRightPaneWidth] = useState<number>(LEFT_PANE_WIDTH);
@@ -162,6 +163,13 @@ function App() {
 
   useEffect(() => {
     refreshProviders();
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    invoke<string>('get_provider_config_path')
+      .then((p) => setProviderConfigPath(String(p || '')))
+      .catch(() => setProviderConfigPath(''));
   }, []);
 
   useEffect(() => {
@@ -752,7 +760,10 @@ function App() {
                     })}
                   </div>
                   <div className="ProviderHint">
-                    Keys are backend-only. Add to <code>backend/.env</code>, then restart backend/app.
+                    Keys are backend-only. {providerConfigPath ? (
+                      <>For installed app, set keys in <code>{providerConfigPath}</code>. </>
+                    ) : null}
+                    For dev mode, use <code>backend/.env</code>. Restart backend/app after changes.
                   </div>
                 </div>
               ) : null}
