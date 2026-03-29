@@ -26,18 +26,9 @@
   "bundle": {
     "active": true,
     "resources": [
-      {
-        "from": "../backend/dist",
-        "to": "backend/dist"
-      },
-      {
-        "from": "../backend/node_modules",
-        "to": "backend/node_modules"
-      },
-      {
-        "from": "../backend/package.json",
-        "to": "backend/package.json"
-      }
+      "../backend/dist",
+      "../backend/node_modules",
+      "../backend/package.json"
     ],
     "icon": [
       "icons/32x32.png",
