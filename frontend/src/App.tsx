@@ -152,11 +152,42 @@ function App() {
   }, []);
 
   const refreshProviders = async () => {
-    const [providers, status] = await Promise.all([getProviders(), getProviderStatus()]);
-    setProviderOptions(providers);
-    setProviderStatusList(status);
-    const active = providers.find((p) => p.enabled);
-    if (active && !providers.some((p) => p.id === selectedProvider && p.enabled)) {
+    const [providersRes, statusRes] = await Promise.allSettled([getProviders(), getProviderStatus()]);
+
+    const statusList =
+      statusRes.status === 'fulfilled' && Array.isArray(statusRes.value) ? statusRes.value : [];
+    if (statusList.length > 0) {
+      setProviderStatusList(statusList);
+    }
+
+    const order: AIProvider[] = ['ollama', 'openai', 'anthropic', 'gemini'];
+    const fromStatus = statusList.length > 0
+      ? order.map((id) => {
+          const found = statusList.find((s) => s.id === id);
+          return {
+            id,
+            enabled: id === 'ollama' ? true : Boolean(found?.enabled || found?.configured),
+          };
+        })
+      : [];
+
+    const fromProviders =
+      providersRes.status === 'fulfilled' && Array.isArray(providersRes.value)
+        ? providersRes.value
+        : [];
+
+    // Prefer /providers/status because it includes configured + enabled information.
+    // Also avoid downgrading to all "no key" on transient fetch failures.
+    const nextOptions =
+      fromStatus.length > 0
+        ? fromStatus
+        : fromProviders.length > 0
+          ? fromProviders
+          : providerOptions;
+
+    setProviderOptions(nextOptions);
+    const active = nextOptions.find((p) => p.enabled);
+    if (active && !nextOptions.some((p) => p.id === selectedProvider && p.enabled)) {
       setSelectedProvider(active.id);
     }
   };
