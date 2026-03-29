@@ -8,7 +8,6 @@ import {
   ProviderStatus,
   getAvailableModelsForProvider,
   getProviderStatus,
-  getProviders,
   streamGenerate,
   testProvider
 } from './api';
@@ -92,6 +91,9 @@ function App() {
   const [selectedProvider, setSelectedProvider] = useState<AIProvider>('ollama');
   const [providerOptions, setProviderOptions] = useState<Array<{ id: AIProvider; enabled: boolean }>>([
     { id: 'ollama', enabled: true },
+    { id: 'openai', enabled: false },
+    { id: 'anthropic', enabled: false },
+    { id: 'gemini', enabled: false },
   ]);
   const [providerStatusList, setProviderStatusList] = useState<ProviderStatus[]>([]);
   const [isProviderPanelOpen, setIsProviderPanelOpen] = useState<boolean>(false);
@@ -152,43 +154,25 @@ function App() {
   }, []);
 
   const refreshProviders = async () => {
-    const [providersRes, statusRes] = await Promise.allSettled([getProviders(), getProviderStatus()]);
-
-    const statusList =
-      statusRes.status === 'fulfilled' && Array.isArray(statusRes.value) ? statusRes.value : [];
-    if (statusList.length > 0) {
-      setProviderStatusList(statusList);
-    }
-
     const order: AIProvider[] = ['ollama', 'openai', 'anthropic', 'gemini'];
-    const fromStatus = statusList.length > 0
-      ? order.map((id) => {
-          const found = statusList.find((s) => s.id === id);
-          return {
-            id,
-            enabled: id === 'ollama' ? true : Boolean(found?.enabled || found?.configured),
-          };
-        })
-      : [];
-
-    const fromProviders =
-      providersRes.status === 'fulfilled' && Array.isArray(providersRes.value)
-        ? providersRes.value
-        : [];
-
-    // Prefer /providers/status because it includes configured + enabled information.
-    // Also avoid downgrading to all "no key" on transient fetch failures.
-    const nextOptions =
-      fromStatus.length > 0
-        ? fromStatus
-        : fromProviders.length > 0
-          ? fromProviders
-          : providerOptions;
-
-    setProviderOptions(nextOptions);
-    const active = nextOptions.find((p) => p.enabled);
-    if (active && !nextOptions.some((p) => p.id === selectedProvider && p.enabled)) {
-      setSelectedProvider(active.id);
+    try {
+      const statusList = await getProviderStatus();
+      if (!Array.isArray(statusList) || statusList.length === 0) return;
+      setProviderStatusList(statusList);
+      const nextOptions = order.map((id) => {
+        const found = statusList.find((s) => s.id === id);
+        return {
+          id,
+          enabled: id === 'ollama' ? true : Boolean(found?.enabled || found?.configured),
+        };
+      });
+      setProviderOptions(nextOptions);
+      const active = nextOptions.find((p) => p.enabled);
+      if (active && !nextOptions.some((p) => p.id === selectedProvider && p.enabled)) {
+        setSelectedProvider(active.id);
+      }
+    } catch {
+      // Keep last known provider state on transient failures.
     }
   };
 
@@ -736,11 +720,15 @@ function App() {
               </div>
               <div className="ChatControlsRow">
                 <select value={selectedProvider} onChange={(e) => setSelectedProvider(e.target.value as AIProvider)}>
-                  {providerOptions.map((p) => (
-                    <option key={p.id} value={p.id} disabled={!p.enabled}>
-                      {p.id.toUpperCase()}{p.enabled ? '' : ' (no key)'}
-                    </option>
-                  ))}
+                  {providerOptions.map((p) => {
+                    const status = providerStatusList.find((s) => s.id === p.id);
+                    const enabled = p.id === 'ollama' ? true : Boolean(status?.enabled || status?.configured || p.enabled);
+                    return (
+                      <option key={p.id} value={p.id} disabled={!enabled}>
+                        {p.id.toUpperCase()}{enabled ? '' : ' (no key)'}
+                      </option>
+                    );
+                  })}
                 </select>
                 <select
                   value={editorState.selectedModel}
