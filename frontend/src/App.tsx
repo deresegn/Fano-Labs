@@ -28,6 +28,7 @@ type ChatThread = {
 
 const RECENT_PROJECTS_KEY = 'fano.recentProjects';
 const MAX_RECENT_PROJECTS = 5;
+const LEFT_PANE_WIDTH = 260;
 
 const isTauri = () =>
   typeof window !== 'undefined' &&
@@ -79,10 +80,11 @@ function App() {
   ]);
   const [agentMode, setAgentMode] = useState<'chat' | 'repo_analyst' | 'code_editor'>('chat');
 
-  const [rightPaneWidth, setRightPaneWidth] = useState<number>(380);
+  const [rightPaneWidth, setRightPaneWidth] = useState<number>(LEFT_PANE_WIDTH);
   const [isRightPaneOpen, setIsRightPaneOpen] = useState<boolean>(true);
   const [isTerminalOpen, setIsTerminalOpen] = useState<boolean>(false);
   const [isChatInEditor, setIsChatInEditor] = useState<boolean>(false);
+  const [isThreadMenuOpen, setIsThreadMenuOpen] = useState<boolean>(false);
 
   const [threads, setThreads] = useState<ChatThread[]>([
     {
@@ -104,10 +106,11 @@ function App() {
   const [isAnalyzingWorkspace, setIsAnalyzingWorkspace] = useState<boolean>(false);
 
   const chatMessagesRef = useRef<HTMLDivElement | null>(null);
+  const threadMenuRef = useRef<HTMLDivElement | null>(null);
   const resizeState = useRef<{ resizing: boolean; startX: number; startWidth: number }>({
     resizing: false,
     startX: 0,
-    startWidth: 380
+    startWidth: LEFT_PANE_WIDTH
   });
 
   const activeThread = useMemo(
@@ -203,7 +206,7 @@ function App() {
     const onMove = (e: MouseEvent) => {
       if (!resizeState.current.resizing) return;
       const delta = resizeState.current.startX - e.clientX;
-      const width = Math.max(280, Math.min(620, resizeState.current.startWidth + delta));
+      const width = Math.max(220, Math.min(420, resizeState.current.startWidth + delta));
       setRightPaneWidth(width);
     };
     const onUp = () => {
@@ -216,6 +219,19 @@ function App() {
       window.removeEventListener('mouseup', onUp);
     };
   }, []);
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (!isThreadMenuOpen) return;
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (threadMenuRef.current && !threadMenuRef.current.contains(target)) {
+        setIsThreadMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [isThreadMenuOpen]);
 
   const persistRecentProjects = (projects: string[]) => {
     setRecentProjects(projects);
@@ -319,6 +335,33 @@ function App() {
       messages: []
     };
     setThreads((prev) => [nextThread, ...prev]);
+    setActiveThreadId(nextId);
+  };
+
+  const closeActiveThread = () => {
+    setThreads((prev) => {
+      const filtered = prev.filter((t) => t.id !== activeThreadId);
+      if (filtered.length === 0) {
+        const nextId = `thread-${Date.now()}`;
+        setActiveThreadId(nextId);
+        return [{ id: nextId, title: 'New Chat', messages: [] }];
+      }
+      setActiveThreadId(filtered[0].id);
+      return filtered;
+    });
+  };
+
+  const closeOtherThreads = () => {
+    setThreads((prev) => {
+      const active = prev.find((t) => t.id === activeThreadId);
+      if (!active) return prev.slice(0, 1);
+      return [active];
+    });
+  };
+
+  const closeAllThreads = () => {
+    const nextId = `thread-${Date.now()}`;
+    setThreads([{ id: nextId, title: 'New Chat', messages: [] }]);
     setActiveThreadId(nextId);
   };
 
@@ -676,6 +719,27 @@ function App() {
                 <div className="PaneHeader RightHeader">
                   <strong>New Agent / Chats</strong>
                   <div className="RightHeaderActions">
+                    <div className="ThreadMenuWrap" ref={threadMenuRef}>
+                      <button type="button" onClick={() => setIsThreadMenuOpen((v) => !v)}>
+                        ...
+                      </button>
+                      {isThreadMenuOpen ? (
+                        <div className="ThreadMenu">
+                          <button type="button" onClick={() => { setIsChatInEditor((v) => !v); setIsThreadMenuOpen(false); }}>
+                            {isChatInEditor ? 'Dock In Side' : 'Open Tab As Editor'}
+                          </button>
+                          <button type="button" onClick={() => { closeActiveThread(); setIsThreadMenuOpen(false); }}>
+                            Close Tab
+                          </button>
+                          <button type="button" onClick={() => { closeOtherThreads(); setIsThreadMenuOpen(false); }}>
+                            Close Other Tabs
+                          </button>
+                          <button type="button" onClick={() => { closeAllThreads(); setIsThreadMenuOpen(false); }}>
+                            Close All Tabs
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
                     <button type="button" onClick={() => setIsChatInEditor((v) => !v)}>
                       {isChatInEditor ? 'Dock In Side' : 'Open In Editor'}
                     </button>

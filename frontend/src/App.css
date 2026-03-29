@@ -60,6 +60,42 @@
 .RightHeaderActions {
   display: flex;
   gap: 8px;
+  position: relative;
+}
+
+.ThreadMenuWrap {
+  position: relative;
+}
+
+.ThreadMenu {
+  position: absolute;
+  right: 0;
+  top: 40px;
+  width: 188px;
+  background: #171c2a;
+  border: 1px solid #33405f;
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  z-index: 30;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ThreadMenu button {
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: #dce5ff;
+  font-size: 12px;
+  border-radius: 6px;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+
+.ThreadMenu button:hover {
+  background: #2b3550;
 }
 
 .PaneContent {
