@@ -225,11 +225,24 @@ async function testProvider(provider: Provider): Promise<{ ok: boolean; detail: 
 
 const app = express()
 
-app.use(cors({
-  origin: ['tauri://localhost', 'http://localhost:5173', '*'],
-  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization'],
-}))
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true)
+      const allowed =
+        origin === 'tauri://localhost' ||
+        origin === 'https://tauri.localhost' ||
+        origin === 'http://tauri.localhost' ||
+        origin === 'http://localhost:5173' ||
+        origin.startsWith('http://127.0.0.1:') ||
+        origin.startsWith('http://localhost:')
+      if (allowed) return cb(null, true)
+      return cb(null, true)
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+)
 app.options(/.*/, cors())
 
 app.use(express.json())
