@@ -1,6 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 
 export type AIProvider = 'ollama' | 'openai' | 'anthropic' | 'gemini';
+export type ProviderStatus = {
+  id: AIProvider;
+  enabled: boolean;
+  configured?: boolean;
+  reachable?: boolean | null;
+  detail?: string;
+};
 type GenReq = { prompt: string; model?: string; language?: string; context?: string };
 type GenRes = { code: string; error?: string };
 
@@ -86,6 +93,53 @@ export async function getProviders(): Promise<Array<{ id: AIProvider; enabled: b
       { id: 'gemini', enabled: false },
     ];
   }
+}
+
+export async function getProviderStatus(): Promise<ProviderStatus[]> {
+  try {
+    const r = await fetch(`${backend}/providers/status`);
+    if (!r.ok) throw new Error(`providers/status ${r.status}`);
+    const j: any = await r.json();
+    const providers = Array.isArray(j?.providers) ? j.providers : [];
+    return providers
+      .map((p: any) => ({
+        id: String(p?.id || '') as AIProvider,
+        enabled: Boolean(p?.enabled),
+        configured: Boolean(p?.configured ?? p?.enabled),
+        reachable: p?.reachable === undefined ? null : p?.reachable === null ? null : Boolean(p?.reachable),
+        detail: String(p?.detail || ''),
+      }))
+      .filter((p: any) => p.id === 'ollama' || p.id === 'openai' || p.id === 'anthropic' || p.id === 'gemini');
+  } catch {
+    return [
+      { id: 'ollama', enabled: true, configured: true, reachable: null, detail: 'Local provider.' },
+      { id: 'openai', enabled: false, configured: false, reachable: null, detail: 'Missing OPENAI_API_KEY.' },
+      { id: 'anthropic', enabled: false, configured: false, reachable: null, detail: 'Missing ANTHROPIC_API_KEY.' },
+      { id: 'gemini', enabled: false, configured: false, reachable: null, detail: 'Missing GEMINI_API_KEY.' },
+    ];
+  }
+}
+
+export async function testProvider(provider: AIProvider): Promise<{ ok: boolean; detail: string; status?: ProviderStatus }> {
+  const r = await fetch(`${backend}/providers/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider }),
+  });
+  const j: any = await r.json().catch(() => ({}));
+  return {
+    ok: Boolean(j?.ok),
+    detail: String(j?.detail || (r.ok ? 'Provider test passed.' : `Provider test failed (${r.status}).`)),
+    status: j?.status
+      ? {
+          id: String(j.status.id || provider) as AIProvider,
+          enabled: Boolean(j.status.enabled),
+          configured: Boolean(j.status.configured ?? j.status.enabled),
+          reachable: j.status.reachable === undefined ? null : j.status.reachable === null ? null : Boolean(j.status.reachable),
+          detail: String(j.status.detail || ''),
+        }
+      : undefined,
+  };
 }
 
 export async function generateCode(req: GenReq & { provider?: AIProvider }): Promise<GenRes> {

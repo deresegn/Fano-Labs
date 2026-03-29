@@ -3,7 +3,15 @@ import { invoke } from '@tauri-apps/api/core';
 import { EditorState } from '../../shared/types';
 import { BackendConnection } from './features/backend/BackendConnection';
 import { EditorFeature } from './features/editor/EditorFeature';
-import { AIProvider, getAvailableModelsForProvider, getProviders, streamGenerate } from './api';
+import {
+  AIProvider,
+  ProviderStatus,
+  getAvailableModelsForProvider,
+  getProviderStatus,
+  getProviders,
+  streamGenerate,
+  testProvider
+} from './api';
 import './App.css';
 
 type FileNode = {
@@ -42,6 +50,13 @@ const getProjectName = (path: string) => {
   return parts[parts.length - 1] || 'Untitled Project';
 };
 
+const providerEnvLabel = (provider: AIProvider) => {
+  if (provider === 'openai') return 'OPENAI_API_KEY';
+  if (provider === 'anthropic') return 'ANTHROPIC_API_KEY';
+  if (provider === 'gemini') return 'GEMINI_API_KEY';
+  return 'local';
+};
+
 const flattenTree = (nodes: FileNode[], prefix = '', depth = 0, limit = 120): string[] => {
   if (depth > 3 || limit <= 0) return [];
   const lines: string[] = [];
@@ -78,6 +93,10 @@ function App() {
   const [providerOptions, setProviderOptions] = useState<Array<{ id: AIProvider; enabled: boolean }>>([
     { id: 'ollama', enabled: true },
   ]);
+  const [providerStatusList, setProviderStatusList] = useState<ProviderStatus[]>([]);
+  const [isProviderPanelOpen, setIsProviderPanelOpen] = useState<boolean>(false);
+  const [providerTesting, setProviderTesting] = useState<Record<string, boolean>>({});
+  const [providerTestResult, setProviderTestResult] = useState<Record<string, string>>({});
   const [agentMode, setAgentMode] = useState<'chat' | 'repo_analyst' | 'code_editor'>('chat');
 
   const [rightPaneWidth, setRightPaneWidth] = useState<number>(LEFT_PANE_WIDTH);
@@ -131,16 +150,18 @@ function App() {
     }
   }, []);
 
+  const refreshProviders = async () => {
+    const [providers, status] = await Promise.all([getProviders(), getProviderStatus()]);
+    setProviderOptions(providers);
+    setProviderStatusList(status);
+    const active = providers.find((p) => p.enabled);
+    if (active && !providers.some((p) => p.id === selectedProvider && p.enabled)) {
+      setSelectedProvider(active.id);
+    }
+  };
+
   useEffect(() => {
-    const loadProviders = async () => {
-      const providers = await getProviders();
-      setProviderOptions(providers);
-      const active = providers.find((p) => p.enabled);
-      if (active && !providers.some((p) => p.id === selectedProvider && p.enabled)) {
-        setSelectedProvider(active.id);
-      }
-    };
-    loadProviders();
+    refreshProviders();
   }, []);
 
   useEffect(() => {
@@ -493,6 +514,27 @@ function App() {
     }
   };
 
+  const runProviderTest = async (provider: AIProvider) => {
+    setProviderTesting((prev) => ({ ...prev, [provider]: true }));
+    setProviderTestResult((prev) => ({ ...prev, [provider]: '' }));
+    try {
+      const result = await testProvider(provider);
+      setProviderTestResult((prev) => ({ ...prev, [provider]: result.detail }));
+      if (result.status) {
+        setProviderStatusList((prev) =>
+          prev.map((p) => (p.id === provider ? { ...p, ...result.status } : p))
+        );
+      }
+    } catch (err: any) {
+      setProviderTestResult((prev) => ({
+        ...prev,
+        [provider]: String(err?.message || err || 'Provider test failed.')
+      }));
+    } finally {
+      setProviderTesting((prev) => ({ ...prev, [provider]: false }));
+    }
+  };
+
   const renderTree = (nodes: FileNode[]) => (
     <ul className="Tree-list">
       {nodes.map((node) => (
@@ -669,6 +711,51 @@ function App() {
                   <option value="code_editor">Code Editor</option>
                 </select>
               </div>
+              {isProviderPanelOpen ? (
+                <div className="ProviderPanel">
+                  <div className="ProviderPanelHeader">
+                    <strong>Provider Status</strong>
+                    <button type="button" onClick={refreshProviders}>
+                      Refresh
+                    </button>
+                  </div>
+                  <div className="ProviderPanelRows">
+                    {providerStatusList.map((p) => {
+                      const badge = !p.configured
+                        ? 'Missing Key'
+                        : p.reachable === false
+                          ? 'Unreachable'
+                          : p.reachable === true
+                            ? 'Connected'
+                            : p.enabled
+                              ? 'Configured'
+                              : 'Unavailable';
+                      return (
+                        <div className="ProviderRow" key={p.id}>
+                          <div className="ProviderMain">
+                            <span className="ProviderName">{p.id.toUpperCase()}</span>
+                            <span className={`ProviderBadge ${badge.toLowerCase().replace(/\s+/g, '-')}`}>{badge}</span>
+                          </div>
+                          <div className="ProviderDetail">{p.detail || `Set ${providerEnvLabel(p.id)} in backend/.env`}</div>
+                          <div className="ProviderActions">
+                            <button
+                              type="button"
+                              onClick={() => runProviderTest(p.id)}
+                              disabled={Boolean(providerTesting[p.id])}
+                            >
+                              {providerTesting[p.id] ? 'Testing...' : 'Test'}
+                            </button>
+                            {providerTestResult[p.id] ? <span>{providerTestResult[p.id]}</span> : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="ProviderHint">
+                    Keys are backend-only. Add to <code>backend/.env</code>, then restart backend/app.
+                  </div>
+                </div>
+              ) : null}
               <div className="ChatComposerRow">
                 <textarea
                   value={chatInput}
@@ -699,6 +786,19 @@ function App() {
                 <span>{getProjectName(workspacePath)}</span>
                 <span>{branchName}</span>
                 <span>FANO-LABS Tab</span>
+              </div>
+              <div className="ProviderPanelToggleRow">
+                <button
+                  type="button"
+                  className="ProviderPanelToggle"
+                  onClick={() => {
+                    const next = !isProviderPanelOpen;
+                    setIsProviderPanelOpen(next);
+                    if (next) refreshProviders();
+                  }}
+                >
+                  {isProviderPanelOpen ? 'Hide Provider Status' : 'Provider Status'}
+                </button>
               </div>
             </div>
           </section>

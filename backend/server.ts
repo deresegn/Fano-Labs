@@ -1,8 +1,18 @@
 import express from 'express'
 import cors from 'cors'
+import dotenv from 'dotenv'
+
+dotenv.config()
 
 const PORT = Number(process.env.PORT) || 3001
 type Provider = 'ollama' | 'openai' | 'anthropic' | 'gemini'
+type ProviderStatus = {
+  id: Provider
+  enabled: boolean
+  configured: boolean
+  reachable: boolean | null
+  detail: string
+}
 
 // Try env first, then both localhost variants
 const OLLAMA_URLS = [
@@ -26,6 +36,35 @@ function parseProvider(input: any): Provider {
   const v = String(input || 'ollama').toLowerCase()
   if (v === 'openai' || v === 'anthropic' || v === 'gemini') return v
   return 'ollama'
+}
+
+function isConfigured(provider: Provider): boolean {
+  if (provider === 'openai') return Boolean(OPENAI_API_KEY)
+  if (provider === 'anthropic') return Boolean(ANTHROPIC_API_KEY)
+  if (provider === 'gemini') return Boolean(GEMINI_API_KEY)
+  return true
+}
+
+function providerStatus(provider: Provider): ProviderStatus {
+  if (provider === 'ollama') {
+    return {
+      id: 'ollama',
+      enabled: true,
+      configured: true,
+      reachable: null,
+      detail: 'Local provider. Use Ollama running on this machine.',
+    }
+  }
+
+  const configured = isConfigured(provider)
+  const label = provider === 'openai' ? 'OPENAI_API_KEY' : provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'GEMINI_API_KEY'
+  return {
+    id: provider,
+    enabled: configured,
+    configured,
+    reachable: null,
+    detail: configured ? 'API key detected.' : `Missing ${label} in backend environment.`,
+  }
 }
 
 async function callOllama(path: string, init?: RequestInit): Promise<Response> {
@@ -143,6 +182,47 @@ async function generateWithGemini(prompt: string, model: string): Promise<string
   return String(text).trim()
 }
 
+async function testProvider(provider: Provider): Promise<{ ok: boolean; detail: string }> {
+  try {
+    if (provider === 'ollama') {
+      const upstream = await callOllama('/api/tags')
+      const j: any = await upstream.json()
+      const count = Array.isArray(j?.models) ? j.models.length : 0
+      return { ok: true, detail: `Ollama reachable. ${count} model(s) detected.` }
+    }
+
+    if (provider === 'openai') {
+      if (!OPENAI_API_KEY) return { ok: false, detail: 'Missing OPENAI_API_KEY.' }
+      const r = await fetch('https://api.openai.com/v1/models', {
+        headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+      })
+      if (!r.ok) return { ok: false, detail: `OpenAI test failed (${r.status}).` }
+      return { ok: true, detail: 'OpenAI connection is healthy.' }
+    }
+
+    if (provider === 'anthropic') {
+      if (!ANTHROPIC_API_KEY) return { ok: false, detail: 'Missing ANTHROPIC_API_KEY.' }
+      const r = await fetch('https://api.anthropic.com/v1/models', {
+        headers: {
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+      })
+      if (!r.ok) return { ok: false, detail: `Anthropic test failed (${r.status}).` }
+      return { ok: true, detail: 'Anthropic connection is healthy.' }
+    }
+
+    if (!GEMINI_API_KEY) return { ok: false, detail: 'Missing GEMINI_API_KEY.' }
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(GEMINI_API_KEY)}`
+    )
+    if (!r.ok) return { ok: false, detail: `Gemini test failed (${r.status}).` }
+    return { ok: true, detail: 'Gemini connection is healthy.' }
+  } catch (err: any) {
+    return { ok: false, detail: String(err?.message || err || 'unknown_error') }
+  }
+}
+
 const app = express()
 
 app.use(cors({
@@ -188,11 +268,38 @@ app.get(['/models', '/api/models', '/v1/models'], async (_req, res) => {
 app.get(['/providers', '/api/providers', '/v1/providers'], (_req, res) => {
   res.json({
     providers: [
-      { id: 'ollama', enabled: true },
-      { id: 'openai', enabled: Boolean(OPENAI_API_KEY) },
-      { id: 'anthropic', enabled: Boolean(ANTHROPIC_API_KEY) },
-      { id: 'gemini', enabled: Boolean(GEMINI_API_KEY) },
+      providerStatus('ollama'),
+      providerStatus('openai'),
+      providerStatus('anthropic'),
+      providerStatus('gemini'),
     ],
+  })
+})
+
+app.get(['/providers/status', '/api/providers/status', '/v1/providers/status'], (_req, res) => {
+  res.json({
+    providers: [
+      providerStatus('ollama'),
+      providerStatus('openai'),
+      providerStatus('anthropic'),
+      providerStatus('gemini'),
+    ],
+  })
+})
+
+app.post(['/providers/test', '/api/providers/test', '/v1/providers/test'], async (req, res) => {
+  const provider = parseProvider((req.body as any)?.provider)
+  const result = await testProvider(provider)
+  const base = providerStatus(provider)
+  res.status(result.ok ? 200 : 502).json({
+    provider,
+    ok: result.ok,
+    detail: result.detail,
+    status: {
+      ...base,
+      reachable: result.ok,
+      detail: result.detail,
+    },
   })
 })
 
