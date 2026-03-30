@@ -30,3 +30,4 @@ src-tauri/gen/schemas/windows-schema.json
 # Env
 .env*
 !.env.example
+!*.env.example
