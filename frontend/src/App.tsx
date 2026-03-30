@@ -44,6 +44,8 @@ const LEFT_PANE_WIDTH = 260;
 const WEB_RECENT_PREFIX = 'web:';
 const LOCAL_WEB_PREFIX = 'local:';
 const WEB_LOCAL_IGNORED_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.cache', 'target']);
+const WEB_FS_DB = 'fano-web-fs';
+const WEB_FS_STORE = 'dir-handles';
 
 const isTauri = () =>
   typeof window !== 'undefined' &&
@@ -75,6 +77,65 @@ const decodeLocalRecent = (value: string): { label: string } | null => {
   if (!String(value || '').startsWith(LOCAL_WEB_PREFIX)) return null;
   const label = String(value).slice(LOCAL_WEB_PREFIX.length).trim();
   return label ? { label } : null;
+};
+
+const supportsFileSystemHandles = () =>
+  typeof window !== 'undefined' &&
+  typeof indexedDB !== 'undefined' &&
+  typeof (window as any).showDirectoryPicker === 'function';
+
+const openFsDb = (): Promise<IDBDatabase> =>
+  new Promise((resolve, reject) => {
+    try {
+      const req = indexedDB.open(WEB_FS_DB, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(WEB_FS_STORE)) {
+          db.createObjectStore(WEB_FS_STORE);
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error('indexeddb_open_failed'));
+    } catch (e) {
+      reject(e);
+    }
+  });
+
+const saveLocalDirHandle = async (label: string, handle: any): Promise<void> => {
+  if (!supportsFileSystemHandles()) return;
+  const db = await openFsDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(WEB_FS_STORE, 'readwrite');
+    tx.objectStore(WEB_FS_STORE).put(handle, label);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('indexeddb_put_failed'));
+  });
+  db.close();
+};
+
+const readLocalDirHandle = async (label: string): Promise<any | null> => {
+  if (!supportsFileSystemHandles()) return null;
+  const db = await openFsDb();
+  const result = await new Promise<any | null>((resolve, reject) => {
+    const tx = db.transaction(WEB_FS_STORE, 'readonly');
+    const req = tx.objectStore(WEB_FS_STORE).get(label);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror = () => reject(req.error || new Error('indexeddb_get_failed'));
+  });
+  db.close();
+  return result;
+};
+
+const ensureLocalDirPermission = async (handle: any): Promise<boolean> => {
+  if (!handle) return false;
+  try {
+    const query = await handle.queryPermission?.({ mode: 'read' });
+    if (query === 'granted') return true;
+    const requested = await handle.requestPermission?.({ mode: 'read' });
+    return requested === 'granted';
+  } catch {
+    return false;
+  }
 };
 
 const providerEnvLabel = (provider: AIProvider) => {
@@ -460,6 +521,7 @@ function App() {
     setIsLoadingTree(true);
     setTreeError('');
     try {
+      await saveLocalDirHandle(label, dirHandle).catch(() => undefined);
       const nodes = await buildWebLocalTree(dirHandle);
       setWorkspacePath(`Local: ${label}`);
       setWebWorkspaceBase(`local:${label}`);
@@ -483,11 +545,22 @@ function App() {
     if (!isTauri()) {
       if (String(path || '').startsWith(LOCAL_WEB_PREFIX)) {
         const decoded = decodeLocalRecent(path);
-        setWorkspacePath(decoded ? `Local: ${decoded.label}` : 'Local Workspace');
-        setWebWorkspaceBase(decoded ? `local:${decoded.label}` : 'local');
-        setActiveFilePath(decoded ? `local:${decoded.label}` : 'local');
+        const label = decoded?.label || 'local-workspace';
+        try {
+          const handle = await readLocalDirHandle(label);
+          const ok = await ensureLocalDirPermission(handle);
+          if (handle && ok) {
+            await loadWebLocalWorkspace(handle);
+            return;
+          }
+        } catch {
+          // fallback to hint below
+        }
+        setWorkspacePath(`Local: ${label}`);
+        setWebWorkspaceBase(`local:${label}`);
+        setActiveFilePath(`local:${label}`);
         setFileTree([]);
-        setTreeError('Local browser folder handles are not persisted after refresh. Re-open folder to grant access again.');
+        setTreeError('Local folder access expired after refresh. Re-open folder and grant access again.');
         setBranchName('web-local');
         return;
       }
