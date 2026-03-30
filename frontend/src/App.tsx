@@ -41,6 +41,7 @@ type ChatThread = {
 const RECENT_PROJECTS_KEY = 'fano.recentProjects';
 const MAX_RECENT_PROJECTS = 5;
 const LEFT_PANE_WIDTH = 260;
+const WEB_RECENT_PREFIX = 'web:';
 
 const isTauri = () =>
   typeof window !== 'undefined' &&
@@ -52,6 +53,18 @@ const getProjectName = (path: string) => {
   const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
   const parts = normalized.split('/');
   return parts[parts.length - 1] || 'Untitled Project';
+};
+
+const encodeWebRecent = (base: string, label: string) => `${WEB_RECENT_PREFIX}${base}|${label}`;
+
+const decodeWebRecent = (value: string): { base: string; label: string } | null => {
+  if (!String(value || '').startsWith(WEB_RECENT_PREFIX)) return null;
+  const raw = String(value).slice(WEB_RECENT_PREFIX.length);
+  const sep = raw.indexOf('|');
+  if (sep === -1) return { base: raw || '.', label: raw || 'Web Workspace' };
+  const base = raw.slice(0, sep) || '.';
+  const label = raw.slice(sep + 1) || base;
+  return { base, label };
 };
 
 const providerEnvLabel = (provider: AIProvider) => {
@@ -170,7 +183,12 @@ function App() {
       if (!raw) return;
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        setRecentProjects(parsed.filter((p) => typeof p === 'string').slice(0, MAX_RECENT_PROJECTS));
+        const cleaned = parsed
+          .filter((p) => typeof p === 'string')
+          .map((p) => String(p))
+          .filter((p) => p.trim().length > 0)
+          .slice(0, MAX_RECENT_PROJECTS);
+        setRecentProjects(cleaned);
       }
     } catch {
       // ignore malformed local storage
@@ -335,13 +353,25 @@ function App() {
       setTreeError('');
       setFileTree([]);
       try {
-        const target = String(path || '.');
-        const info = await getWebWorkspaceInfo(target);
-        const base = info.base || target;
+        let target = String(path || '.').trim() || '.';
+        if (
+          target.toLowerCase() === 'current' ||
+          target.toLowerCase().startsWith('web workspace') ||
+          target.includes('\\') ||
+          target.includes(':')
+        ) {
+          target = '.';
+        }
+        let info = await getWebWorkspaceInfo(target);
+        let base = info.base || target;
+        if (!base || base.includes('\\') || base.includes(':')) {
+          info = await getWebWorkspaceInfo('.');
+          base = info.base || '.';
+        }
         const nodes = await getWebWorkspaceTree(4, base);
         const label = info.rootLabel || base || info.root || 'Web Workspace';
         setWorkspacePath(label);
-        appendRecentProject(label);
+        appendRecentProject(encodeWebRecent(base, label));
         setWebWorkspaceBase(base);
         setFileTree(nodes);
         setActiveFilePath(base);
@@ -416,6 +446,28 @@ function App() {
     }
 
     try {
+      const picker = (window as any).showDirectoryPicker;
+      if (typeof picker === 'function') {
+        const dirHandle = await picker({ mode: 'read' });
+        if (dirHandle?.name) {
+          setWorkspacePath(`Local: ${dirHandle.name}`);
+          setWebWorkspaceBase('.');
+          setActiveFilePath(`Local: ${dirHandle.name}`);
+          setFileTree([]);
+          setTreeError(
+            'Browser local folder selected. Local-browser tree/file reading is limited. Use Open Folder again and choose a server folder for full tree browsing.'
+          );
+          setBranchName('web-local');
+          appendRecentProject(`Local: ${dirHandle.name}`);
+        }
+        return;
+      }
+    } catch {
+      // user cancelled local picker or browser blocks it
+      return;
+    }
+
+    try {
       const dirs = await getWebWorkspaceDirs('.');
       if (dirs.length > 0) {
         const options = dirs.slice(0, 20).map((d, i) => `${i + 1}. ${d.name}`).join('\n');
@@ -423,6 +475,7 @@ function App() {
           `Select server folder number:\n${options}\n\nPress Cancel to open default workspace.`,
           '1'
         );
+        if (pick === null) return;
         const idx = Number(String(pick || '').trim());
         if (Number.isInteger(idx) && idx >= 1 && idx <= dirs.length) {
           await loadWorkspace(dirs[idx - 1].path);
@@ -694,10 +747,18 @@ function App() {
               <ul>
                 {recentProjects.map((project) => (
                   <li key={project}>
-                    <button type="button" onClick={() => loadWorkspace(project)}>
-                      {getProjectName(project)}
-                      <span>{project}</span>
-                    </button>
+                    {(() => {
+                      const decoded = decodeWebRecent(project);
+                      const label = decoded?.label || getProjectName(project);
+                      const subtitle = decoded?.base || project;
+                      const targetPath = decoded?.base || project;
+                      return (
+                        <button type="button" onClick={() => loadWorkspace(targetPath)}>
+                          {label}
+                          <span>{subtitle}</span>
+                        </button>
+                      );
+                    })()}
                   </li>
                 ))}
               </ul>
