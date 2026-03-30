@@ -2,7 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import { execSync } from 'child_process'
-import { existsSync, promises as fsp } from 'fs'
+import { existsSync, promises as fsp, readFileSync } from 'fs'
 import path from 'path'
 
 dotenv.config()
@@ -79,6 +79,28 @@ function detectWorkspaceRoot(): string {
 }
 
 const WORKSPACE_ROOT = detectWorkspaceRoot()
+
+function detectWorkspaceLabel(absPath: string): string {
+  const envLabel = String(process.env.WEB_WORKSPACE_LABEL || '').trim()
+  if (envLabel) return envLabel
+  try {
+    const pkgPath = path.join(absPath, 'package.json')
+    if (existsSync(pkgPath)) {
+      const raw = readFileSync(pkgPath, 'utf8')
+      const j = JSON.parse(raw)
+      const name = String(j?.name || '').trim()
+      if (name) return name
+    }
+  } catch {
+    // ignore parse errors
+  }
+  const base = path.basename(absPath)
+  if (base.toLowerCase() === 'current') {
+    const parent = path.basename(path.dirname(absPath))
+    if (parent) return parent
+  }
+  return base || 'workspace'
+}
 
 function toPosixRelative(absPath: string): string {
   const rel = path.relative(WORKSPACE_ROOT, absPath)
@@ -448,12 +470,38 @@ app.post(['/providers/test', '/api/providers/test', '/v1/providers/test'], async
 })
 
 app.get(['/workspace/info', '/api/workspace/info', '/v1/workspace/info'], (_req, res) => {
-  const branch = getGitBranch(WORKSPACE_ROOT)
+  const inputPath = String((_req.query as any)?.path || '.')
+  const base = safeWorkspacePath(inputPath)
+  const branch = getGitBranch(base)
   res.json({
     root: WORKSPACE_ROOT,
-    rootLabel: path.basename(WORKSPACE_ROOT),
+    base: toPosixRelative(base) || '.',
+    rootLabel: detectWorkspaceLabel(base),
     branch,
   })
+})
+
+app.get(['/workspace/dirs', '/api/workspace/dirs', '/v1/workspace/dirs'], async (req, res) => {
+  try {
+    const base = safeWorkspacePath(String((req.query as any)?.path || '.'))
+    const entries = await fsp.readdir(base, { withFileTypes: true })
+    const dirs = entries
+      .filter((e) => e.isDirectory() && !WORKSPACE_IGNORED_DIRS.has(e.name))
+      .map((e) => {
+        const abs = path.join(base, e.name)
+        return {
+          name: e.name,
+          path: toPosixRelative(abs),
+        }
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+    res.json({
+      base: toPosixRelative(base) || '.',
+      dirs,
+    })
+  } catch (err: any) {
+    res.status(400).json({ error: 'workspace_dirs_failed', detail: String(err?.message || err) })
+  }
 })
 
 app.get(['/workspace/tree', '/api/workspace/tree', '/v1/workspace/tree'], async (req, res) => {
@@ -499,20 +547,22 @@ app.get(['/workspace/file', '/api/workspace/file', '/v1/workspace/file'], async 
 
 app.get(['/workspace/snapshot', '/api/workspace/snapshot', '/v1/workspace/snapshot'], async (req, res) => {
   try {
+    const base = safeWorkspacePath(String((req.query as any)?.path || '.'))
     const limitRaw = Number((req.query as any)?.limit ?? 12000)
     const limit = Math.max(2000, Math.min(50000, Number.isFinite(limitRaw) ? limitRaw : 12000))
     const counter = { count: 0 }
-    const nodes = await listWorkspaceTree(WORKSPACE_ROOT, Math.min(3, WORKSPACE_MAX_DEPTH), counter)
+    const nodes = await listWorkspaceTree(base, Math.min(3, WORKSPACE_MAX_DEPTH), counter)
     const treeLines = flattenTreeLines(nodes, '', 220)
     let snapshot = `Workspace root: ${WORKSPACE_ROOT}\n`
-    snapshot += `Git branch: ${getGitBranch(WORKSPACE_ROOT) || 'unknown'}\n`
+    snapshot += `Workspace base: ${toPosixRelative(base) || '.'}\n`
+    snapshot += `Git branch: ${getGitBranch(base) || getGitBranch(WORKSPACE_ROOT) || 'unknown'}\n`
     snapshot += 'Visible tree:\n'
     snapshot += treeLines.length > 0 ? treeLines.join('\n') : '(empty)\n'
 
     const keyFiles = ['README.md', 'package.json', 'backend/package.json', 'frontend/package.json']
     for (const rel of keyFiles) {
       try {
-        const abs = safeWorkspacePath(rel)
+        const abs = safeWorkspacePath(path.join(toPosixRelative(base), rel))
         const stat = await fsp.stat(abs)
         if (!stat.isFile() || stat.size > 18000) continue
         const txt = (await fsp.readFile(abs, 'utf8')).slice(0, 4000)

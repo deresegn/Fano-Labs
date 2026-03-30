@@ -8,6 +8,7 @@ import {
   ProviderStatus,
   getAvailableModelsForProvider,
   getProviderStatus,
+  getWebWorkspaceDirs,
   getWebWorkspaceFile,
   getWebWorkspaceInfo,
   getWebWorkspaceSnapshot,
@@ -102,6 +103,7 @@ function App() {
   });
 
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
+  const [webWorkspaceBase, setWebWorkspaceBase] = useState<string>('.');
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [isLoadingTree, setIsLoadingTree] = useState<boolean>(false);
@@ -333,17 +335,20 @@ function App() {
       setTreeError('');
       setFileTree([]);
       try {
-        const info = await getWebWorkspaceInfo();
-        const nodes = await getWebWorkspaceTree(4);
-        const label = info.rootLabel || info.root || path || 'Web Workspace';
+        const target = String(path || '.');
+        const info = await getWebWorkspaceInfo(target);
+        const base = info.base || target;
+        const nodes = await getWebWorkspaceTree(4, base);
+        const label = info.rootLabel || base || info.root || 'Web Workspace';
         setWorkspacePath(label);
         appendRecentProject(label);
+        setWebWorkspaceBase(base);
         setFileTree(nodes);
-        setActiveFilePath(label);
+        setActiveFilePath(base);
         setBranchName(info.branch || 'web');
       } catch (e: any) {
         setWorkspacePath(path || 'Web Workspace');
-        setActiveFilePath(path || 'Web Workspace');
+        setActiveFilePath(path || '.');
         setFileTree([]);
         setTreeError(String(e?.message || e || 'Failed to load server workspace tree'));
         setBranchName('web');
@@ -410,7 +415,24 @@ function App() {
       }
     }
 
-    await loadWorkspace('Web Workspace');
+    try {
+      const dirs = await getWebWorkspaceDirs('.');
+      if (dirs.length > 0) {
+        const options = dirs.slice(0, 20).map((d, i) => `${i + 1}. ${d.name}`).join('\n');
+        const pick = window.prompt(
+          `Select server folder number:\n${options}\n\nPress Cancel to open default workspace.`,
+          '1'
+        );
+        const idx = Number(String(pick || '').trim());
+        if (Number.isInteger(idx) && idx >= 1 && idx <= dirs.length) {
+          await loadWorkspace(dirs[idx - 1].path);
+          return;
+        }
+      }
+    } catch {
+      // fallback below
+    }
+    await loadWorkspace('.');
   };
 
   const addNewThread = () => {
@@ -500,7 +522,7 @@ function App() {
         if (isTauri()) {
           repoSnapshot = await invoke<string>('read_repo_snapshot', { path: workspacePath });
         } else {
-          repoSnapshot = await getWebWorkspaceSnapshot(12000);
+          repoSnapshot = await getWebWorkspaceSnapshot(12000, webWorkspaceBase || '.');
         }
         if (repoSnapshot.length > 10000) {
           repoSnapshot = `${repoSnapshot.slice(0, 10000)}\n... [snapshot truncated]`;

@@ -370,8 +370,8 @@ export async function checkHealth(): Promise<{ok:boolean;status?:string}> {
   }
 }
 
-export async function getWebWorkspaceInfo(): Promise<{ root: string; rootLabel: string; branch: string | null }> {
-  const r = await fetch(`${backend}/workspace/info`);
+export async function getWebWorkspaceInfo(relPath = '.'): Promise<{ root: string; base: string; rootLabel: string; branch: string | null }> {
+  const r = await fetch(`${backend}/workspace/info?path=${encodeURIComponent(relPath)}`);
   if (!r.ok) {
     const detail = await readErrorDetail(r, `workspace/info ${r.status}`);
     throw new Error(detail);
@@ -379,19 +379,30 @@ export async function getWebWorkspaceInfo(): Promise<{ root: string; rootLabel: 
   const j: any = await r.json();
   return {
     root: String(j?.root || ''),
+    base: String(j?.base || '.'),
     rootLabel: String(j?.rootLabel || ''),
     branch: j?.branch == null ? null : String(j.branch),
   };
 }
 
-export async function getWebWorkspaceTree(depth = 4): Promise<WorkspaceNode[]> {
-  const r = await fetch(`${backend}/workspace/tree?depth=${encodeURIComponent(String(depth))}`);
+export async function getWebWorkspaceTree(depth = 4, relPath = '.'): Promise<WorkspaceNode[]> {
+  const r = await fetch(`${backend}/workspace/tree?depth=${encodeURIComponent(String(depth))}&path=${encodeURIComponent(relPath)}`);
   if (!r.ok) {
     const detail = await readErrorDetail(r, `workspace/tree ${r.status}`);
     throw new Error(detail);
   }
   const j: any = await r.json();
   return Array.isArray(j?.nodes) ? (j.nodes as WorkspaceNode[]) : [];
+}
+
+export async function getWebWorkspaceDirs(relPath = '.'): Promise<Array<{ name: string; path: string }>> {
+  const r = await fetch(`${backend}/workspace/dirs?path=${encodeURIComponent(relPath)}`);
+  if (!r.ok) {
+    const detail = await readErrorDetail(r, `workspace/dirs ${r.status}`);
+    throw new Error(detail);
+  }
+  const j: any = await r.json();
+  return Array.isArray(j?.dirs) ? j.dirs : [];
 }
 
 export async function getWebWorkspaceFile(filePath: string): Promise<string> {
@@ -404,8 +415,8 @@ export async function getWebWorkspaceFile(filePath: string): Promise<string> {
   return String(j?.content || '');
 }
 
-export async function getWebWorkspaceSnapshot(limit = 14000): Promise<string> {
-  const r = await fetch(`${backend}/workspace/snapshot?limit=${encodeURIComponent(String(limit))}`);
+export async function getWebWorkspaceSnapshot(limit = 14000, relPath = '.'): Promise<string> {
+  const r = await fetch(`${backend}/workspace/snapshot?limit=${encodeURIComponent(String(limit))}&path=${encodeURIComponent(relPath)}`);
   if (!r.ok) {
     const detail = await readErrorDetail(r, `workspace/snapshot ${r.status}`);
     throw new Error(detail);
