@@ -31,3 +31,5 @@ src-tauri/gen/schemas/windows-schema.json
 .env*
 !.env.example
 !*.env.example
+!backend/.env.production.example
+!frontend/.env.web.production.example
