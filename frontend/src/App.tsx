@@ -126,6 +126,7 @@ function App() {
   const [chatInput, setChatInput] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isAnalyzingWorkspace, setIsAnalyzingWorkspace] = useState<boolean>(false);
+  const isWebMode = !isTauri();
 
   const chatMessagesRef = useRef<HTMLDivElement | null>(null);
   const threadMenuRef = useRef<HTMLDivElement | null>(null);
@@ -306,16 +307,26 @@ function App() {
   };
 
   const loadWorkspace = async (path: string) => {
+    if (!isTauri()) {
+      const virtualPath = path || 'Web Workspace';
+      setWorkspacePath(virtualPath);
+      appendRecentProject(virtualPath);
+      setActiveFilePath(virtualPath);
+      setIsLoadingTree(false);
+      setFileTree([]);
+      setTreeError('Web mode: local file tree is desktop-only. Git/server workspace integration is next.');
+      setBranchName('web');
+      return;
+    }
+
     let resolvedPath = path;
-    if (isTauri()) {
-      try {
-        const normalized = await invoke<string>('normalize_workspace_path', { path });
-        if (normalized && typeof normalized === 'string') {
-          resolvedPath = normalized;
-        }
-      } catch {
-        // preserve original value so we can still show error below
+    try {
+      const normalized = await invoke<string>('normalize_workspace_path', { path });
+      if (normalized && typeof normalized === 'string') {
+        resolvedPath = normalized;
       }
+    } catch {
+      // preserve original value so we can still show error below
     }
 
     setWorkspacePath(resolvedPath);
@@ -365,24 +376,19 @@ function App() {
       }
     }
 
-    if (!isTauri()) {
-      try {
-        const picker = (window as any).showDirectoryPicker;
-        if (typeof picker === 'function') {
-          const dirHandle = await picker({ mode: 'read' });
-          if (dirHandle?.name) {
-            // Browser directory handles don't expose absolute paths.
-            // Use a virtual workspace label for dev-mode preview.
-            await loadWorkspace(`C:\\Users\\deresegn\\${dirHandle.name}`);
-          }
-          return;
+    try {
+      const picker = (window as any).showDirectoryPicker;
+      if (typeof picker === 'function') {
+        const dirHandle = await picker({ mode: 'read' });
+        if (dirHandle?.name) {
+          await loadWorkspace(`Web Workspace: ${dirHandle.name}`);
         }
-      } catch {
-        // user cancelled or picker unavailable
+        return;
       }
-      window.alert('Use the desktop app build to pick folders with full filesystem paths.');
-      return;
+    } catch {
+      // user cancelled or picker unavailable
     }
+    await loadWorkspace('Web Workspace');
   };
 
   const addNewThread = () => {
@@ -657,7 +663,15 @@ function App() {
               <strong>{getProjectName(workspacePath).toUpperCase()}</strong>
             </div>
             <div className="PaneContent">
-              {isLoadingTree ? (
+              {isWebMode ? (
+                <div className="PaneEmpty">
+                  Web mode workspace is active.
+                  <div className="PaneError">
+                    Local filesystem tree and file opening are desktop-only right now.
+                    Next step is Git/server workspace browsing for web.
+                  </div>
+                </div>
+              ) : isLoadingTree ? (
                 <div className="PaneEmpty">Loading folder tree...</div>
               ) : fileTree.length > 0 ? (
                 renderTree(fileTree)
