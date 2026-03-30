@@ -42,6 +42,8 @@ const RECENT_PROJECTS_KEY = 'fano.recentProjects';
 const MAX_RECENT_PROJECTS = 5;
 const LEFT_PANE_WIDTH = 260;
 const WEB_RECENT_PREFIX = 'web:';
+const LOCAL_WEB_PREFIX = 'local:';
+const WEB_LOCAL_IGNORED_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.cache', 'target']);
 
 const isTauri = () =>
   typeof window !== 'undefined' &&
@@ -65,6 +67,14 @@ const decodeWebRecent = (value: string): { base: string; label: string } | null 
   const base = raw.slice(0, sep) || '.';
   const label = raw.slice(sep + 1) || base;
   return { base, label };
+};
+
+const encodeLocalRecent = (label: string) => `${LOCAL_WEB_PREFIX}${label}`;
+
+const decodeLocalRecent = (value: string): { label: string } | null => {
+  if (!String(value || '').startsWith(LOCAL_WEB_PREFIX)) return null;
+  const label = String(value).slice(LOCAL_WEB_PREFIX.length).trim();
+  return label ? { label } : null;
 };
 
 const providerEnvLabel = (provider: AIProvider) => {
@@ -166,6 +176,7 @@ function App() {
 
   const chatMessagesRef = useRef<HTMLDivElement | null>(null);
   const threadMenuRef = useRef<HTMLDivElement | null>(null);
+  const webLocalFileHandlesRef = useRef<Map<string, any>>(new Map());
   const resizeState = useRef<{ resizing: boolean; startX: number; startWidth: number }>({
     resizing: false,
     startX: 0,
@@ -187,6 +198,7 @@ function App() {
           .filter((p) => typeof p === 'string')
           .map((p) => String(p))
           .filter((p) => p.trim().length > 0)
+          .filter((p) => !isWebMode || p.startsWith(WEB_RECENT_PREFIX) || p.startsWith(LOCAL_WEB_PREFIX))
           .slice(0, MAX_RECENT_PROJECTS);
         setRecentProjects(cleaned);
       }
@@ -347,8 +359,84 @@ function App() {
     persistRecentProjects(recentProjects.filter((p) => p !== path));
   };
 
+  const buildWebLocalTree = async (
+    dirHandle: any,
+    basePath = '',
+    depth = 0,
+    maxDepth = 5,
+    counter = { count: 0 }
+  ): Promise<FileNode[]> => {
+    if (!dirHandle || depth > maxDepth || counter.count > 2000) return [];
+    const children: FileNode[] = [];
+    const entries: Array<{ name: string; handle: any }> = [];
+    for await (const [name, handle] of dirHandle.entries()) {
+      entries.push({ name: String(name), handle });
+    }
+    entries.sort((a, b) => {
+      const ad = a.handle?.kind === 'directory';
+      const bd = b.handle?.kind === 'directory';
+      if (ad && !bd) return -1;
+      if (!ad && bd) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    for (const entry of entries) {
+      if (counter.count > 2000) break;
+      const name = entry.name;
+      const handle = entry.handle;
+      if (name.startsWith('.') && name !== '.env.example') continue;
+      const rel = basePath ? `${basePath}/${name}` : name;
+      if (handle.kind === 'directory') {
+        if (WEB_LOCAL_IGNORED_DIRS.has(name)) continue;
+        counter.count += 1;
+        const nested = await buildWebLocalTree(handle, rel, depth + 1, maxDepth, counter);
+        children.push({ name, path: rel, is_dir: true, children: nested });
+      } else if (handle.kind === 'file') {
+        counter.count += 1;
+        webLocalFileHandlesRef.current.set(rel, handle);
+        children.push({ name, path: rel, is_dir: false, children: [] });
+      }
+    }
+    return children;
+  };
+
+  const loadWebLocalWorkspace = async (dirHandle: any) => {
+    const label = String(dirHandle?.name || 'local-workspace');
+    webLocalFileHandlesRef.current.clear();
+    setIsLoadingTree(true);
+    setTreeError('');
+    try {
+      const nodes = await buildWebLocalTree(dirHandle);
+      setWorkspacePath(`Local: ${label}`);
+      setWebWorkspaceBase(`local:${label}`);
+      setFileTree(nodes);
+      setActiveFilePath(`local:${label}`);
+      setBranchName('web-local');
+      appendRecentProject(encodeLocalRecent(label));
+    } catch (e: any) {
+      setWorkspacePath(`Local: ${label}`);
+      setWebWorkspaceBase(`local:${label}`);
+      setFileTree([]);
+      setActiveFilePath(`local:${label}`);
+      setTreeError(String(e?.message || e || 'Failed to load local browser workspace'));
+      setBranchName('web-local');
+    } finally {
+      setIsLoadingTree(false);
+    }
+  };
+
   const loadWorkspace = async (path: string) => {
     if (!isTauri()) {
+      if (String(path || '').startsWith(LOCAL_WEB_PREFIX)) {
+        const decoded = decodeLocalRecent(path);
+        setWorkspacePath(decoded ? `Local: ${decoded.label}` : 'Local Workspace');
+        setWebWorkspaceBase(decoded ? `local:${decoded.label}` : 'local');
+        setActiveFilePath(decoded ? `local:${decoded.label}` : 'local');
+        setFileTree([]);
+        setTreeError('Local browser folder handles are not persisted after refresh. Re-open folder to grant access again.');
+        setBranchName('web-local');
+        return;
+      }
       setIsLoadingTree(true);
       setTreeError('');
       setFileTree([]);
@@ -450,15 +538,7 @@ function App() {
       if (typeof picker === 'function') {
         const dirHandle = await picker({ mode: 'read' });
         if (dirHandle?.name) {
-          setWorkspacePath(`Local: ${dirHandle.name}`);
-          setWebWorkspaceBase('.');
-          setActiveFilePath(`Local: ${dirHandle.name}`);
-          setFileTree([]);
-          setTreeError(
-            'Browser local folder selected. Local-browser tree/file reading is limited. Use Open Folder again and choose a server folder for full tree browsing.'
-          );
-          setBranchName('web-local');
-          appendRecentProject(`Local: ${dirHandle.name}`);
+          await loadWebLocalWorkspace(dirHandle);
         }
         return;
       }
@@ -684,7 +764,15 @@ function App() {
     if (node.is_dir) return;
     if (!isWebMode) return;
     try {
-      const content = await getWebWorkspaceFile(node.path);
+      let content = '';
+      if (webWorkspaceBase.startsWith('local:')) {
+        const handle = webLocalFileHandlesRef.current.get(node.path);
+        if (!handle) throw new Error('Local file handle not available. Re-open folder to refresh access.');
+        const file = await handle.getFile();
+        content = await file.text();
+      } else {
+        content = await getWebWorkspaceFile(node.path);
+      }
       setEditorState((prev) => ({
         ...prev,
         code: content,
@@ -749,9 +837,10 @@ function App() {
                   <li key={project}>
                     {(() => {
                       const decoded = decodeWebRecent(project);
-                      const label = decoded?.label || getProjectName(project);
-                      const subtitle = decoded?.base || project;
-                      const targetPath = decoded?.base || project;
+                      const localDecoded = decodeLocalRecent(project);
+                      const label = decoded?.label || localDecoded?.label || getProjectName(project);
+                      const subtitle = decoded?.base || localDecoded?.label || project;
+                      const targetPath = decoded ? decoded.base : localDecoded ? project : project;
                       return (
                         <button type="button" onClick={() => loadWorkspace(targetPath)}>
                           {label}
