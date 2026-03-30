@@ -84,6 +84,31 @@ const providerEnvLabel = (provider: AIProvider) => {
   return 'local';
 };
 
+const preferredProviderModel: Record<AIProvider, string> = {
+  ollama: 'qwen2.5-coder:0.5b',
+  openai: 'gpt-4.1-mini',
+  anthropic: 'claude-3-5-haiku-latest',
+  gemini: 'gemini-2.5-flash',
+};
+
+const detectBillingError = (text: string): string | null => {
+  const v = String(text || '').toLowerCase();
+  if (!v) return null;
+  if (v.includes('insufficient_quota') || v.includes('exceeded your current quota')) {
+    return 'OpenAI API credits/quota are exhausted. Add API billing credits in OpenAI Platform.';
+  }
+  if (v.includes('credit balance is too low') || (v.includes('anthropic') && v.includes('too low'))) {
+    return 'Anthropic API credits are too low. Add credits in Anthropic Console billing.';
+  }
+  if (v.includes('429') && v.includes('openai')) {
+    return 'OpenAI returned 429. This is usually quota/rate-limit; check API billing and limits.';
+  }
+  if (v.includes('rate limit') && v.includes('anthropic')) {
+    return 'Anthropic rate limit hit. Check plan limits or reduce request frequency.';
+  }
+  return null;
+};
+
 const flattenTree = (nodes: FileNode[], prefix = '', depth = 0, limit = 120): string[] => {
   if (depth > 3 || limit <= 0) return [];
   const lines: string[] = [];
@@ -146,6 +171,7 @@ function App() {
   const [providerTesting, setProviderTesting] = useState<Record<string, boolean>>({});
   const [providerTestResult, setProviderTestResult] = useState<Record<string, string>>({});
   const [providerConfigPath, setProviderConfigPath] = useState<string>('');
+  const [providerAlert, setProviderAlert] = useState<string>('');
   const [agentMode, setAgentMode] = useState<'chat' | 'repo_analyst' | 'code_editor'>('chat');
 
   const [rightPaneWidth, setRightPaneWidth] = useState<number>(LEFT_PANE_WIDTH);
@@ -291,7 +317,12 @@ function App() {
       const options = Array.from(unique.values());
       if (!cancelled && options.length > 0) {
         setModelOptions(options);
-        if (!options.some((m) => m.id === editorState.selectedModel)) {
+        const preferred = preferredProviderModel[selectedProvider];
+        const hasCurrent = options.some((m) => m.id === editorState.selectedModel);
+        const hasPreferred = options.some((m) => m.id === preferred);
+        if (hasPreferred && editorState.selectedModel !== preferred) {
+          setEditorState((prev) => ({ ...prev, selectedModel: preferred }));
+        } else if (!hasCurrent) {
           setEditorState((prev) => ({ ...prev, selectedModel: options[0].id }));
         }
       }
@@ -306,6 +337,15 @@ function App() {
       cancelled = true;
     };
   }, [selectedProvider]);
+
+  useEffect(() => {
+    const status = providerStatusList.find((p) => p.id === selectedProvider);
+    if (status && selectedProvider !== 'ollama' && !status.configured) {
+      setProviderAlert(`Missing ${providerEnvLabel(selectedProvider)} for ${selectedProvider.toUpperCase()}.`);
+      return;
+    }
+    setProviderAlert('');
+  }, [selectedProvider, providerStatusList]);
 
   useEffect(() => {
     chatMessagesRef.current?.scrollTo({
@@ -723,8 +763,11 @@ function App() {
           );
         }
       );
+      setProviderAlert('');
     } catch (err: any) {
       const detail = String(err?.message || err || 'unknown error');
+      const billingHint = detectBillingError(detail);
+      if (billingHint) setProviderAlert(billingHint);
       updateActiveThreadMessages((messages) =>
         messages.map((m) =>
           m.id === assistantId
@@ -744,6 +787,9 @@ function App() {
     try {
       const result = await testProvider(provider);
       setProviderTestResult((prev) => ({ ...prev, [provider]: result.detail }));
+      const billingHint = detectBillingError(result.detail);
+      if (billingHint) setProviderAlert(billingHint);
+      else if (result.ok && provider === selectedProvider) setProviderAlert('');
       if (result.status) {
         setProviderStatusList((prev) =>
           prev.map((p) => (p.id === provider ? { ...p, ...result.status } : p))
@@ -977,6 +1023,7 @@ function App() {
                   <option value="code_editor">Code Editor</option>
                 </select>
               </div>
+              {providerAlert ? <div className="ProviderAlert">{providerAlert}</div> : null}
               {isProviderPanelOpen ? (
                 <div className="ProviderPanel">
                   <div className="ProviderPanelHeader">

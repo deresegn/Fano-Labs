@@ -570,6 +570,17 @@
   justify-content: flex-end;
 }
 
+.ProviderAlert {
+  margin-top: 8px;
+  border: 1px solid #6a3d3d;
+  background: #2b1a1a;
+  color: #ffd2d2;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .StatusLine {
   margin-top: 8px;
   border-top: 1px solid #2e3548;
