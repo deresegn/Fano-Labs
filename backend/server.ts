@@ -24,6 +24,10 @@ const OLLAMA_URLS = [
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || ''
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || ''
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''
+const CORS_ORIGINS = String(process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((v) => v.trim())
+  .filter(Boolean)
 
 const DEFAULT_MODELS: Record<Provider, string[]> = {
   ollama: ['qwen2.5-coder:0.5b'],
@@ -229,15 +233,16 @@ app.use(
   cors({
     origin: (origin, cb) => {
       if (!origin) return cb(null, true)
-      const allowed =
+      const defaultAllowed =
         origin === 'tauri://localhost' ||
         origin === 'https://tauri.localhost' ||
         origin === 'http://tauri.localhost' ||
         origin === 'http://localhost:5173' ||
         origin.startsWith('http://127.0.0.1:') ||
         origin.startsWith('http://localhost:')
-      if (allowed) return cb(null, true)
-      return cb(null, true)
+      const envAllowed = CORS_ORIGINS.includes(origin)
+      if (defaultAllowed || envAllowed) return cb(null, true)
+      return cb(new Error(`cors_blocked_origin:${origin}`))
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
