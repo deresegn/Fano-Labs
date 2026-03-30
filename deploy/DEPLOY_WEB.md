@@ -6,8 +6,8 @@
 - Nginx
 - PM2 (`npm i -g pm2`)
 - Domain DNS configured:
-  - `app.yourdomain.com` -> server IP
-  - `api.yourdomain.com` -> server IP
+  - `app.fanolabs.dev` -> server IP
+  - `api.fanolabs.dev` -> server IP
 
 ## 2) Clone and install
 ```bash
@@ -23,7 +23,7 @@ cp backend/.env.production.example backend/.env
 nano backend/.env
 ```
 Set at least:
-- `CORS_ORIGINS=https://app.yourdomain.com`
+- `CORS_ORIGINS=https://app.fanolabs.dev`
 - `OPENAI_API_KEY=...` (and optional Anthropic/Gemini)
 
 ## 4) Frontend env
@@ -32,7 +32,7 @@ cp frontend/.env.web.production.example frontend/.env.production
 nano frontend/.env.production
 ```
 Set:
-- `VITE_BACKEND_URL=https://api.yourdomain.com`
+- `VITE_BACKEND_URL=https://api.fanolabs.dev`
 
 ## 5) Build
 ```bash
@@ -59,13 +59,13 @@ sudo systemctl reload nginx
 ## 8) TLS (Let's Encrypt)
 ```bash
 sudo apt-get install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d app.yourdomain.com -d api.yourdomain.com
+sudo certbot --nginx -d app.fanolabs.dev -d api.fanolabs.dev
 ```
 
 ## 9) Verify
 ```bash
-curl https://api.yourdomain.com/health
-curl https://api.yourdomain.com/providers/status
+curl https://api.fanolabs.dev/health
+curl https://api.fanolabs.dev/providers/status
 ```
 
 ## 10) Update workflow
