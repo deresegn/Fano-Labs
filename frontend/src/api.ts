@@ -1,6 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
 
 export type AIProvider = 'ollama' | 'openai' | 'anthropic' | 'gemini';
+export type WorkspaceNode = {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  children: WorkspaceNode[];
+};
 export type ProviderStatus = {
   id: AIProvider;
   enabled: boolean;
@@ -362,5 +368,49 @@ export async function checkHealth(): Promise<{ok:boolean;status?:string}> {
   } catch {
     return { ok: false };
   }
+}
+
+export async function getWebWorkspaceInfo(): Promise<{ root: string; rootLabel: string; branch: string | null }> {
+  const r = await fetch(`${backend}/workspace/info`);
+  if (!r.ok) {
+    const detail = await readErrorDetail(r, `workspace/info ${r.status}`);
+    throw new Error(detail);
+  }
+  const j: any = await r.json();
+  return {
+    root: String(j?.root || ''),
+    rootLabel: String(j?.rootLabel || ''),
+    branch: j?.branch == null ? null : String(j.branch),
+  };
+}
+
+export async function getWebWorkspaceTree(depth = 4): Promise<WorkspaceNode[]> {
+  const r = await fetch(`${backend}/workspace/tree?depth=${encodeURIComponent(String(depth))}`);
+  if (!r.ok) {
+    const detail = await readErrorDetail(r, `workspace/tree ${r.status}`);
+    throw new Error(detail);
+  }
+  const j: any = await r.json();
+  return Array.isArray(j?.nodes) ? (j.nodes as WorkspaceNode[]) : [];
+}
+
+export async function getWebWorkspaceFile(filePath: string): Promise<string> {
+  const r = await fetch(`${backend}/workspace/file?path=${encodeURIComponent(filePath)}`);
+  if (!r.ok) {
+    const detail = await readErrorDetail(r, `workspace/file ${r.status}`);
+    throw new Error(detail);
+  }
+  const j: any = await r.json();
+  return String(j?.content || '');
+}
+
+export async function getWebWorkspaceSnapshot(limit = 14000): Promise<string> {
+  const r = await fetch(`${backend}/workspace/snapshot?limit=${encodeURIComponent(String(limit))}`);
+  if (!r.ok) {
+    const detail = await readErrorDetail(r, `workspace/snapshot ${r.status}`);
+    throw new Error(detail);
+  }
+  const j: any = await r.json();
+  return String(j?.snapshot || '');
 }
 

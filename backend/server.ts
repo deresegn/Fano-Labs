@@ -1,6 +1,9 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import { execSync } from 'child_process'
+import { existsSync, promises as fsp } from 'fs'
+import path from 'path'
 
 dotenv.config()
 
@@ -12,6 +15,13 @@ type ProviderStatus = {
   configured: boolean
   reachable: boolean | null
   detail: string
+}
+
+type WorkspaceNode = {
+  name: string
+  path: string
+  is_dir: boolean
+  children: WorkspaceNode[]
 }
 
 // Try env first, then both localhost variants
@@ -34,6 +44,122 @@ const DEFAULT_MODELS: Record<Provider, string[]> = {
   openai: ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'],
   anthropic: ['claude-3-5-haiku-latest', 'claude-3-7-sonnet-latest'],
   gemini: ['gemini-2.5-flash', 'gemini-2.5-pro'],
+}
+
+const WORKSPACE_MAX_DEPTH = Math.max(1, Math.min(8, Number(process.env.WEB_WORKSPACE_MAX_DEPTH || 4)))
+const WORKSPACE_MAX_NODES = Math.max(200, Math.min(5000, Number(process.env.WEB_WORKSPACE_MAX_NODES || 1200)))
+const WORKSPACE_IGNORED_DIRS = new Set([
+  '.git',
+  'node_modules',
+  'dist',
+  'build',
+  'target',
+  '.next',
+  '.turbo',
+  '.cache',
+  '.idea',
+  '.vscode',
+])
+
+function detectWorkspaceRoot(): string {
+  const envRoot = String(process.env.WEB_WORKSPACE_ROOT || process.env.WORKSPACE_ROOT || '').trim()
+  if (envRoot) return path.resolve(envRoot)
+
+  const cwd = process.cwd()
+  if (existsSync(path.join(cwd, 'frontend')) && existsSync(path.join(cwd, 'backend'))) {
+    return cwd
+  }
+  if (path.basename(cwd) === 'backend') {
+    const parent = path.resolve(cwd, '..')
+    if (existsSync(path.join(parent, 'frontend')) && existsSync(path.join(parent, 'backend'))) {
+      return parent
+    }
+  }
+  return cwd
+}
+
+const WORKSPACE_ROOT = detectWorkspaceRoot()
+
+function toPosixRelative(absPath: string): string {
+  const rel = path.relative(WORKSPACE_ROOT, absPath)
+  return rel.split(path.sep).join('/')
+}
+
+function safeWorkspacePath(relPath: string): string {
+  const input = String(relPath || '').trim().replace(/\\/g, '/')
+  const absolute = path.resolve(WORKSPACE_ROOT, input || '.')
+  const normalizedRoot = path.resolve(WORKSPACE_ROOT)
+  const inside = absolute === normalizedRoot || absolute.startsWith(normalizedRoot + path.sep)
+  if (!inside) {
+    throw new Error('invalid_workspace_path')
+  }
+  return absolute
+}
+
+function getGitBranch(workspaceRoot: string): string | null {
+  try {
+    const out = execSync('git rev-parse --abbrev-ref HEAD', {
+      cwd: workspaceRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+    return out || null
+  } catch {
+    return null
+  }
+}
+
+async function listWorkspaceTree(dirAbs: string, depth: number, counter: { count: number }): Promise<WorkspaceNode[]> {
+  if (counter.count >= WORKSPACE_MAX_NODES) return []
+  const entries = await fsp.readdir(dirAbs, { withFileTypes: true })
+  entries.sort((a, b) => {
+    if (a.isDirectory() && !b.isDirectory()) return -1
+    if (!a.isDirectory() && b.isDirectory()) return 1
+    return a.name.localeCompare(b.name)
+  })
+
+  const nodes: WorkspaceNode[] = []
+  for (const entry of entries) {
+    if (counter.count >= WORKSPACE_MAX_NODES) break
+    if (entry.name.startsWith('.') && entry.name !== '.env.example') {
+      if (entry.name !== '.github') continue
+    }
+    if (entry.isDirectory() && WORKSPACE_IGNORED_DIRS.has(entry.name)) continue
+
+    const abs = path.join(dirAbs, entry.name)
+    const rel = toPosixRelative(abs)
+    const isDir = entry.isDirectory()
+    counter.count += 1
+    const node: WorkspaceNode = {
+      name: entry.name,
+      path: rel,
+      is_dir: isDir,
+      children: [],
+    }
+    if (isDir && depth > 0) {
+      try {
+        node.children = await listWorkspaceTree(abs, depth - 1, counter)
+      } catch {
+        node.children = []
+      }
+    }
+    nodes.push(node)
+  }
+  return nodes
+}
+
+function flattenTreeLines(nodes: WorkspaceNode[], prefix = '', limit = 220): string[] {
+  if (limit <= 0) return []
+  const lines: string[] = []
+  for (const node of nodes) {
+    if (lines.length >= limit) break
+    lines.push(`${prefix}${node.is_dir ? '[D]' : '[F]'} ${node.path}`)
+    if (node.is_dir && node.children.length > 0) {
+      const nested = flattenTreeLines(node.children, `${prefix}  `, limit - lines.length)
+      lines.push(...nested)
+    }
+  }
+  return lines
 }
 
 function parseProvider(input: any): Provider {
@@ -319,6 +445,88 @@ app.post(['/providers/test', '/api/providers/test', '/v1/providers/test'], async
       detail: result.detail,
     },
   })
+})
+
+app.get(['/workspace/info', '/api/workspace/info', '/v1/workspace/info'], (_req, res) => {
+  const branch = getGitBranch(WORKSPACE_ROOT)
+  res.json({
+    root: WORKSPACE_ROOT,
+    rootLabel: path.basename(WORKSPACE_ROOT),
+    branch,
+  })
+})
+
+app.get(['/workspace/tree', '/api/workspace/tree', '/v1/workspace/tree'], async (req, res) => {
+  try {
+    const depthRaw = Number((req.query as any)?.depth ?? WORKSPACE_MAX_DEPTH)
+    const depth = Math.max(1, Math.min(WORKSPACE_MAX_DEPTH, Number.isFinite(depthRaw) ? depthRaw : WORKSPACE_MAX_DEPTH))
+    const base = safeWorkspacePath(String((req.query as any)?.path || '.'))
+    const counter = { count: 0 }
+    const nodes = await listWorkspaceTree(base, depth, counter)
+    res.json({
+      root: WORKSPACE_ROOT,
+      base: toPosixRelative(base) || '.',
+      depth,
+      nodeCount: counter.count,
+      nodes,
+    })
+  } catch (err: any) {
+    res.status(400).json({ error: 'workspace_tree_failed', detail: String(err?.message || err) })
+  }
+})
+
+app.get(['/workspace/file', '/api/workspace/file', '/v1/workspace/file'], async (req, res) => {
+  try {
+    const rel = String((req.query as any)?.path || '').trim()
+    if (!rel) return res.status(400).json({ error: 'workspace_file_path_required' })
+    const abs = safeWorkspacePath(rel)
+    const stat = await fsp.stat(abs)
+    if (!stat.isFile()) return res.status(400).json({ error: 'workspace_file_not_a_file' })
+    const maxBytes = Math.max(20000, Math.min(1_000_000, Number(process.env.WEB_WORKSPACE_MAX_FILE_BYTES || 200000)))
+    if (stat.size > maxBytes) {
+      return res.status(413).json({ error: 'workspace_file_too_large', detail: `File exceeds ${maxBytes} bytes.` })
+    }
+    const content = await fsp.readFile(abs, 'utf8')
+    res.json({
+      path: toPosixRelative(abs),
+      size: stat.size,
+      content,
+    })
+  } catch (err: any) {
+    res.status(400).json({ error: 'workspace_file_failed', detail: String(err?.message || err) })
+  }
+})
+
+app.get(['/workspace/snapshot', '/api/workspace/snapshot', '/v1/workspace/snapshot'], async (req, res) => {
+  try {
+    const limitRaw = Number((req.query as any)?.limit ?? 12000)
+    const limit = Math.max(2000, Math.min(50000, Number.isFinite(limitRaw) ? limitRaw : 12000))
+    const counter = { count: 0 }
+    const nodes = await listWorkspaceTree(WORKSPACE_ROOT, Math.min(3, WORKSPACE_MAX_DEPTH), counter)
+    const treeLines = flattenTreeLines(nodes, '', 220)
+    let snapshot = `Workspace root: ${WORKSPACE_ROOT}\n`
+    snapshot += `Git branch: ${getGitBranch(WORKSPACE_ROOT) || 'unknown'}\n`
+    snapshot += 'Visible tree:\n'
+    snapshot += treeLines.length > 0 ? treeLines.join('\n') : '(empty)\n'
+
+    const keyFiles = ['README.md', 'package.json', 'backend/package.json', 'frontend/package.json']
+    for (const rel of keyFiles) {
+      try {
+        const abs = safeWorkspacePath(rel)
+        const stat = await fsp.stat(abs)
+        if (!stat.isFile() || stat.size > 18000) continue
+        const txt = (await fsp.readFile(abs, 'utf8')).slice(0, 4000)
+        snapshot += `\n\n# ${rel}\n${txt}`
+      } catch {
+        // ignore optional files
+      }
+    }
+
+    if (snapshot.length > limit) snapshot = `${snapshot.slice(0, limit)}\n... [snapshot truncated]`
+    res.json({ snapshot })
+  } catch (err: any) {
+    res.status(400).json({ error: 'workspace_snapshot_failed', detail: String(err?.message || err) })
+  }
 })
 
 async function generateHandler(req: express.Request, res: express.Response) {

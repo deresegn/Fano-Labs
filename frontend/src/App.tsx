@@ -8,6 +8,10 @@ import {
   ProviderStatus,
   getAvailableModelsForProvider,
   getProviderStatus,
+  getWebWorkspaceFile,
+  getWebWorkspaceInfo,
+  getWebWorkspaceSnapshot,
+  getWebWorkspaceTree,
   streamGenerate,
   testProvider
 } from './api';
@@ -70,6 +74,23 @@ const flattenTree = (nodes: FileNode[], prefix = '', depth = 0, limit = 120): st
     }
   }
   return lines;
+};
+
+const languageFromPath = (filePath: string): string => {
+  const normalized = String(filePath || '').toLowerCase();
+  if (normalized.endsWith('.ts') || normalized.endsWith('.tsx')) return 'typescript';
+  if (normalized.endsWith('.js') || normalized.endsWith('.jsx')) return 'javascript';
+  if (normalized.endsWith('.json')) return 'json';
+  if (normalized.endsWith('.css')) return 'css';
+  if (normalized.endsWith('.html') || normalized.endsWith('.htm')) return 'html';
+  if (normalized.endsWith('.md')) return 'markdown';
+  if (normalized.endsWith('.py')) return 'python';
+  if (normalized.endsWith('.rs')) return 'rust';
+  if (normalized.endsWith('.go')) return 'go';
+  if (normalized.endsWith('.java')) return 'java';
+  if (normalized.endsWith('.yml') || normalized.endsWith('.yaml')) return 'yaml';
+  if (normalized.endsWith('.sh')) return 'shell';
+  return 'javascript';
 };
 
 function App() {
@@ -308,14 +329,27 @@ function App() {
 
   const loadWorkspace = async (path: string) => {
     if (!isTauri()) {
-      const virtualPath = path || 'Web Workspace';
-      setWorkspacePath(virtualPath);
-      appendRecentProject(virtualPath);
-      setActiveFilePath(virtualPath);
-      setIsLoadingTree(false);
-      setFileTree([]);
+      setIsLoadingTree(true);
       setTreeError('');
-      setBranchName('web');
+      setFileTree([]);
+      try {
+        const info = await getWebWorkspaceInfo();
+        const nodes = await getWebWorkspaceTree(4);
+        const label = info.rootLabel || info.root || path || 'Web Workspace';
+        setWorkspacePath(label);
+        appendRecentProject(label);
+        setFileTree(nodes);
+        setActiveFilePath(label);
+        setBranchName(info.branch || 'web');
+      } catch (e: any) {
+        setWorkspacePath(path || 'Web Workspace');
+        setActiveFilePath(path || 'Web Workspace');
+        setFileTree([]);
+        setTreeError(String(e?.message || e || 'Failed to load server workspace tree'));
+        setBranchName('web');
+      } finally {
+        setIsLoadingTree(false);
+      }
       return;
     }
 
@@ -376,18 +410,6 @@ function App() {
       }
     }
 
-    try {
-      const picker = (window as any).showDirectoryPicker;
-      if (typeof picker === 'function') {
-        const dirHandle = await picker({ mode: 'read' });
-        if (dirHandle?.name) {
-          await loadWorkspace(`Web Workspace: ${dirHandle.name}`);
-        }
-        return;
-      }
-    } catch {
-      // user cancelled or picker unavailable
-    }
     await loadWorkspace('Web Workspace');
   };
 
@@ -472,10 +494,14 @@ function App() {
     );
     let repoSnapshot = '';
 
-    if (wantsRepoAnalysis && workspacePath && isTauri()) {
+    if (wantsRepoAnalysis && workspacePath) {
       setIsAnalyzingWorkspace(true);
       try {
-        repoSnapshot = await invoke<string>('read_repo_snapshot', { path: workspacePath });
+        if (isTauri()) {
+          repoSnapshot = await invoke<string>('read_repo_snapshot', { path: workspacePath });
+        } else {
+          repoSnapshot = await getWebWorkspaceSnapshot(12000);
+        }
         if (repoSnapshot.length > 10000) {
           repoSnapshot = `${repoSnapshot.slice(0, 10000)}\n... [snapshot truncated]`;
         }
@@ -578,13 +604,29 @@ function App() {
     }
   };
 
+  const handleTreeNodeClick = async (node: FileNode) => {
+    setActiveFilePath(node.path);
+    if (node.is_dir) return;
+    if (!isWebMode) return;
+    try {
+      const content = await getWebWorkspaceFile(node.path);
+      setEditorState((prev) => ({
+        ...prev,
+        code: content,
+        language: languageFromPath(node.path),
+      }));
+    } catch (e: any) {
+      setTreeError(String(e?.message || e || 'Failed to open file from server workspace'));
+    }
+  };
+
   const renderTree = (nodes: FileNode[]) => (
     <ul className="Tree-list">
       {nodes.map((node) => (
         <li key={node.path}>
           <button
             className={`Tree-node ${activeFilePath === node.path ? 'active' : ''}`}
-            onClick={() => setActiveFilePath(node.path)}
+            onClick={() => handleTreeNodeClick(node)}
             type="button"
           >
             <span className="Tree-node-icon">{node.is_dir ? '▸' : '•'}</span>
@@ -663,21 +705,18 @@ function App() {
               <strong>{getProjectName(workspacePath).toUpperCase()}</strong>
             </div>
             <div className="PaneContent">
-              {isWebMode ? (
-                <div className="PaneEmpty">
-                  Web mode workspace is active.
-                  <div className="PaneNote">
-                    Local filesystem tree and file opening are desktop-only right now.
-                    Next step is Git/server workspace browsing for web.
-                  </div>
-                </div>
-              ) : isLoadingTree ? (
+              {isLoadingTree ? (
                 <div className="PaneEmpty">Loading folder tree...</div>
               ) : fileTree.length > 0 ? (
                 renderTree(fileTree)
               ) : (
                 <div className="PaneEmpty">
-                  No files found or folder access unavailable.
+                  {isWebMode ? 'Web workspace tree is empty or unavailable.' : 'No files found or folder access unavailable.'}
+                  {isWebMode ? (
+                    <div className="PaneNote">
+                      Web mode reads files from the server workspace configured for this app.
+                    </div>
+                  ) : null}
                   {treeError ? <div className="PaneError">{treeError}</div> : null}
                 </div>
               )}
