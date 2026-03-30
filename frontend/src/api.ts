@@ -20,6 +20,23 @@ const BACKEND_URL =
 const backend = BACKEND_URL.replace(/\/$/, '');
 const ollama = OLLAMA_URL.replace(/\/$/, '');
 
+async function readErrorDetail(r: Response, fallback: string): Promise<string> {
+  try {
+    const j: any = await r.json();
+    const detail = String(j?.detail || j?.error || '').trim();
+    if (detail) return detail;
+  } catch {
+    // ignore JSON parse failure and try plain text
+  }
+  try {
+    const txt = (await r.text()).trim();
+    if (txt) return txt;
+  } catch {
+    // ignore text read failure
+  }
+  return fallback;
+}
+
 function isTauriRuntime(): boolean {
   if (typeof window === 'undefined') return false;
   const w: any = window as any;
@@ -165,12 +182,15 @@ export async function generateCode(req: GenReq & { provider?: AIProvider }): Pro
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: req.prompt, model: req.model, language: req.language, provider })
         });
-        if (!r.ok) throw new Error(`backend ${r.status}`);
+        if (!r.ok) {
+          const detail = await readErrorDetail(r, `backend ${r.status}`);
+          throw new Error(detail);
+        }
         const j: any = await r.json();
         return { code: (j?.response ?? '').toString().trim() };
-      } catch {
+      } catch (err: any) {
+        if (provider !== 'ollama') throw err;
         try {
-          if (provider !== 'ollama') throw new Error('non_ollama_provider');
           const native = await nativeOllamaGenerate(req);
           return { code: native };
         } catch {
@@ -185,7 +205,10 @@ export async function generateCode(req: GenReq & { provider?: AIProvider }): Pro
             stream: false
           })
         });
-        if (!or.ok) throw new Error(`ollama ${or.status}`);
+        if (!or.ok) {
+          const detail = await readErrorDetail(or, `ollama ${or.status}`);
+          throw new Error(detail);
+        }
         const oj: any = await or.json();
         return { code: (oj?.response ?? '').toString().trim() };
       }
@@ -272,7 +295,10 @@ export async function streamGenerate(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...req, provider })
     });
-    if (!r.ok || !r.body) throw new Error(`stream failed: ${r.status}`);
+    if (!r.ok || !r.body) {
+      const detail = !r.ok ? await readErrorDetail(r, `stream failed: ${r.status}`) : 'stream body missing';
+      throw new Error(detail);
+    }
 
     const reader = r.body.getReader();
     const decoder = new TextDecoder();

@@ -314,7 +314,7 @@ function App() {
       setActiveFilePath(virtualPath);
       setIsLoadingTree(false);
       setFileTree([]);
-      setTreeError('Web mode: local file tree is desktop-only. Git/server workspace integration is next.');
+      setTreeError('');
       setBranchName('web');
       return;
     }
@@ -666,7 +666,7 @@ function App() {
               {isWebMode ? (
                 <div className="PaneEmpty">
                   Web mode workspace is active.
-                  <div className="PaneError">
+                  <div className="PaneNote">
                     Local filesystem tree and file opening are desktop-only right now.
                     Next step is Git/server workspace browsing for web.
                   </div>
