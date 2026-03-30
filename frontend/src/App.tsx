@@ -179,6 +179,7 @@ function App() {
   const [isTerminalOpen, setIsTerminalOpen] = useState<boolean>(false);
   const [isChatInEditor, setIsChatInEditor] = useState<boolean>(false);
   const [isThreadMenuOpen, setIsThreadMenuOpen] = useState<boolean>(false);
+  const [openTopMenu, setOpenTopMenu] = useState<string | null>(null);
 
   const [threads, setThreads] = useState<ChatThread[]>([
     {
@@ -202,6 +203,7 @@ function App() {
 
   const chatMessagesRef = useRef<HTMLDivElement | null>(null);
   const threadMenuRef = useRef<HTMLDivElement | null>(null);
+  const topMenuRef = useRef<HTMLDivElement | null>(null);
   const webLocalFileHandlesRef = useRef<Map<string, any>>(new Map());
   const resizeState = useRef<{ resizing: boolean; startX: number; startWidth: number }>({
     resizing: false,
@@ -374,16 +376,28 @@ function App() {
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
-      if (!isThreadMenuOpen) return;
       const target = e.target as Node | null;
       if (!target) return;
-      if (threadMenuRef.current && !threadMenuRef.current.contains(target)) {
+      if (isThreadMenuOpen && threadMenuRef.current && !threadMenuRef.current.contains(target)) {
         setIsThreadMenuOpen(false);
+      }
+      if (openTopMenu && topMenuRef.current && !topMenuRef.current.contains(target)) {
+        setOpenTopMenu(null);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsThreadMenuOpen(false);
+        setOpenTopMenu(null);
       }
     };
     document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
-  }, [isThreadMenuOpen]);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isThreadMenuOpen, openTopMenu]);
 
   const persistRecentProjects = (projects: string[]) => {
     setRecentProjects(projects);
@@ -805,6 +819,44 @@ function App() {
     }
   };
 
+  const runMenuAction = async (action: () => void | Promise<void>) => {
+    setOpenTopMenu(null);
+    await action();
+  };
+
+  const goHome = () => {
+    setWorkspacePath(null);
+    setActiveFilePath('');
+    setFileTree([]);
+    setTreeError('');
+    setBranchName('unknown');
+  };
+
+  const reloadCurrentWorkspace = async () => {
+    if (!workspacePath) return;
+    if (isTauri()) {
+      await loadWorkspace(workspacePath);
+      return;
+    }
+    const base = webWorkspaceBase && !webWorkspaceBase.startsWith('local:') ? webWorkspaceBase : '.';
+    await loadWorkspace(base);
+  };
+
+  const focusComposer = () => {
+    const el = document.querySelector('.ChatComposerRow textarea') as HTMLTextAreaElement | null;
+    if (el) el.focus();
+  };
+
+  const focusTree = () => {
+    const el = document.querySelector('.Tree-node') as HTMLButtonElement | null;
+    if (el) el.focus();
+  };
+
+  const focusThreads = () => {
+    const el = document.querySelector('.ThreadItem') as HTMLButtonElement | null;
+    if (el) el.focus();
+  };
+
   const handleTreeNodeClick = async (node: FileNode) => {
     setActiveFilePath(node.path);
     if (node.is_dir) return;
@@ -906,14 +958,84 @@ function App() {
 
   return (
     <div className="App">
-      <div className="MenuBar">
-        <span>File</span>
-        <span>Edit</span>
-        <span>View</span>
-        <span>Go</span>
-        <span>Run</span>
-        <span>Terminal</span>
-        <span>Help</span>
+      <div className="MenuBar" ref={topMenuRef}>
+        <div className="TopMenu">
+          <button type="button" className="TopMenuBtn" onClick={() => setOpenTopMenu((v) => (v === 'file' ? null : 'file'))}>File</button>
+          {openTopMenu === 'file' ? (
+            <div className="TopMenuDropdown">
+              <button type="button" onClick={() => runMenuAction(() => handleOpenFolder())}>Open Folder</button>
+              <button type="button" onClick={() => runMenuAction(() => reloadCurrentWorkspace())}>Reload Workspace</button>
+              <button type="button" onClick={() => runMenuAction(() => addNewThread())}>New Chat</button>
+              <button type="button" onClick={() => runMenuAction(() => goHome())}>Back To Home</button>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="TopMenu">
+          <button type="button" className="TopMenuBtn" onClick={() => setOpenTopMenu((v) => (v === 'edit' ? null : 'edit'))}>Edit</button>
+          {openTopMenu === 'edit' ? (
+            <div className="TopMenuDropdown">
+              <button type="button" onClick={() => runMenuAction(() => document.execCommand('undo'))}>Undo</button>
+              <button type="button" onClick={() => runMenuAction(() => document.execCommand('redo'))}>Redo</button>
+              <button type="button" onClick={() => runMenuAction(() => document.execCommand('copy'))}>Copy</button>
+              <button type="button" onClick={() => runMenuAction(() => document.execCommand('paste'))}>Paste</button>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="TopMenu">
+          <button type="button" className="TopMenuBtn" onClick={() => setOpenTopMenu((v) => (v === 'view' ? null : 'view'))}>View</button>
+          {openTopMenu === 'view' ? (
+            <div className="TopMenuDropdown">
+              <button type="button" onClick={() => runMenuAction(() => setIsRightPaneOpen((v) => !v))}>{isRightPaneOpen ? 'Hide Chat Pane' : 'Show Chat Pane'}</button>
+              <button type="button" onClick={() => runMenuAction(() => setIsTerminalOpen((v) => !v))}>{isTerminalOpen ? 'Hide Terminal' : 'Show Terminal'}</button>
+              <button type="button" onClick={() => runMenuAction(() => setIsProviderPanelOpen((v) => !v))}>{isProviderPanelOpen ? 'Hide Provider Status' : 'Show Provider Status'}</button>
+              <button type="button" onClick={() => runMenuAction(() => setIsChatInEditor((v) => !v))}>{isChatInEditor ? 'Dock Chat In Side' : 'Open Chat In Editor'}</button>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="TopMenu">
+          <button type="button" className="TopMenuBtn" onClick={() => setOpenTopMenu((v) => (v === 'go' ? null : 'go'))}>Go</button>
+          {openTopMenu === 'go' ? (
+            <div className="TopMenuDropdown">
+              <button type="button" onClick={() => runMenuAction(() => focusComposer())}>Focus Composer</button>
+              <button type="button" onClick={() => runMenuAction(() => focusTree())}>Focus File Tree</button>
+              <button type="button" onClick={() => runMenuAction(() => focusThreads())}>Focus Chat Tabs</button>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="TopMenu">
+          <button type="button" className="TopMenuBtn" onClick={() => setOpenTopMenu((v) => (v === 'run' ? null : 'run'))}>Run</button>
+          {openTopMenu === 'run' ? (
+            <div className="TopMenuDropdown">
+              <button type="button" onClick={() => runMenuAction(() => sendChatMessage())}>Send Prompt</button>
+              <button type="button" onClick={() => runMenuAction(() => runProviderTest(selectedProvider))}>Test Current Provider</button>
+              <button type="button" onClick={() => runMenuAction(() => refreshProviders())}>Refresh Providers</button>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="TopMenu">
+          <button type="button" className="TopMenuBtn" onClick={() => setOpenTopMenu((v) => (v === 'terminal' ? null : 'terminal'))}>Terminal</button>
+          {openTopMenu === 'terminal' ? (
+            <div className="TopMenuDropdown">
+              <button type="button" onClick={() => runMenuAction(() => setIsTerminalOpen((v) => !v))}>{isTerminalOpen ? 'Hide Terminal' : 'Show Terminal'}</button>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="TopMenu">
+          <button type="button" className="TopMenuBtn" onClick={() => setOpenTopMenu((v) => (v === 'help' ? null : 'help'))}>Help</button>
+          {openTopMenu === 'help' ? (
+            <div className="TopMenuDropdown">
+              <button type="button" onClick={() => runMenuAction(() => window.open('https://app.fanolabs.dev', '_blank'))}>Open App URL</button>
+              <button type="button" onClick={() => runMenuAction(() => window.open('https://api.fanolabs.dev/health', '_blank'))}>Open API Health</button>
+              <button type="button" onClick={() => runMenuAction(() => setIsProviderPanelOpen(true))}>Show Provider Status</button>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <BackendConnection>

@@ -17,11 +17,57 @@
   background: #111318;
   color: #c4c9d9;
   user-select: none;
+  position: relative;
+  z-index: 40;
 }
 
-.MenuBar span {
+.TopMenu {
+  position: relative;
+}
+
+.TopMenuBtn {
   font-size: 13px;
-  cursor: default;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: #c4c9d9;
+  padding: 0;
+  height: 24px;
+}
+
+.TopMenuBtn:hover {
+  color: #eef3ff;
+}
+
+.TopMenuDropdown {
+  position: absolute;
+  top: 30px;
+  left: 0;
+  width: 200px;
+  background: #171c2a;
+  border: 1px solid #33405f;
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  z-index: 45;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.TopMenuDropdown button {
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: #dce5ff;
+  font-size: 12px;
+  border-radius: 6px;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+
+.TopMenuDropdown button:hover {
+  background: #2b3550;
 }
 
 .Shell {
