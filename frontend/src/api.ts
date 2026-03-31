@@ -22,8 +22,10 @@ const OLLAMA_URL =
   (import.meta as any).env?.VITE_OLLAMA_URL ?? 'http://localhost:11434';
 const BACKEND_URL =
   (import.meta as any).env?.VITE_BACKEND_URL ?? 'http://localhost:3001';
+const CLOUD_BACKEND_URL =
+  (import.meta as any).env?.VITE_CLOUD_BACKEND_URL ?? 'https://api.fanolabs.dev';
+const BACKEND_OVERRIDE_KEY = 'fano.backendUrlOverride';
 
-const backend = BACKEND_URL.replace(/\/$/, '');
 const ollama = OLLAMA_URL.replace(/\/$/, '');
 
 async function readErrorDetail(r: Response, fallback: string): Promise<string> {
@@ -52,6 +54,40 @@ function isTauriRuntime(): boolean {
     String(w.location?.protocol || '') === 'tauri:' ||
     String(w.location?.origin || '').startsWith('tauri://')
   );
+}
+
+function normalizeUrl(url: string): string {
+  return String(url || '').trim().replace(/\/+$/, '');
+}
+
+export function getBackendBase(): string {
+  if (typeof window !== 'undefined') {
+    try {
+      const override = window.localStorage.getItem(BACKEND_OVERRIDE_KEY);
+      if (override && override.trim()) return normalizeUrl(override);
+    } catch {
+      // ignore localStorage access issues
+    }
+  }
+  return normalizeUrl(BACKEND_URL);
+}
+
+export function getCloudBackendBase(): string {
+  return normalizeUrl(CLOUD_BACKEND_URL);
+}
+
+export function setBackendBaseOverride(url: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (!url || !url.trim()) window.localStorage.removeItem(BACKEND_OVERRIDE_KEY);
+    else window.localStorage.setItem(BACKEND_OVERRIDE_KEY, normalizeUrl(url));
+  } catch {
+    // ignore localStorage access issues
+  }
+}
+
+function backendUrl(path: string): string {
+  return `${getBackendBase()}${path}`;
 }
 
 async function fetchOllamaModels(): Promise<Array<{id:string;name:string;description?:string}>> {
@@ -101,7 +137,7 @@ async function nativeOllamaGenerate(req: GenReq): Promise<string> {
 
 export async function getProviders(): Promise<Array<{ id: AIProvider; enabled: boolean }>> {
   try {
-    const r = await fetch(`${backend}/providers`);
+    const r = await fetch(backendUrl('/providers'));
     if (!r.ok) throw new Error(`providers ${r.status}`);
     const j: any = await r.json();
     const providers = Array.isArray(j?.providers) ? j.providers : [];
@@ -120,7 +156,7 @@ export async function getProviders(): Promise<Array<{ id: AIProvider; enabled: b
 
 export async function getProviderStatus(): Promise<ProviderStatus[]> {
   try {
-    const r = await fetch(`${backend}/providers/status`);
+    const r = await fetch(backendUrl('/providers/status'));
     if (!r.ok) throw new Error(`providers/status ${r.status}`);
     const j: any = await r.json();
     const providers = Array.isArray(j?.providers) ? j.providers : [];
@@ -144,7 +180,7 @@ export async function getProviderStatus(): Promise<ProviderStatus[]> {
 }
 
 export async function testProvider(provider: AIProvider): Promise<{ ok: boolean; detail: string; status?: ProviderStatus }> {
-  const r = await fetch(`${backend}/providers/test`, {
+  const r = await fetch(backendUrl('/providers/test'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ provider }),
@@ -183,7 +219,7 @@ export async function generateCode(req: GenReq & { provider?: AIProvider }): Pro
       return { code: (j?.response ?? '').toString().trim() };
     } else {
       try {
-        const r = await fetch(`${backend}/generate`, {
+        const r = await fetch(backendUrl('/generate'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: req.prompt, model: req.model, language: req.language, provider })
@@ -241,7 +277,7 @@ export async function getAvailableModelsForProvider(provider: AIProvider): Promi
       if (unique.size > 0) return Array.from(unique.values());
       return await fetchOllamaModels();
     } else {
-      const r = await fetch(`${backend}/models?provider=${encodeURIComponent(provider)}`);
+      const r = await fetch(backendUrl(`/models?provider=${encodeURIComponent(provider)}`));
       if (!r.ok) throw new Error(`backend ${r.status}`);
       const j: any = await r.json();
       const names: string[] = j?.models ?? [];
@@ -296,7 +332,7 @@ export async function streamGenerate(
   const provider = (req.provider || 'ollama') as AIProvider;
   let hadDelta = false;
   try {
-    const r = await fetch(`${backend}/generate/stream`, {
+    const r = await fetch(backendUrl('/generate/stream'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...req, provider })
@@ -360,7 +396,7 @@ export async function streamGenerate(
   }
 }
 export async function checkHealth(): Promise<{ok:boolean;status?:string}> {
-  const url = USE_OLLAMA ? `${ollama}/api/tags` : `${backend}/health`;
+  const url = USE_OLLAMA ? `${ollama}/api/tags` : backendUrl('/health');
   try {
     const r = await fetch(url, { cache: 'no-store' });
     if (!r.ok) return { ok: false };
@@ -371,7 +407,7 @@ export async function checkHealth(): Promise<{ok:boolean;status?:string}> {
 }
 
 export async function getWebWorkspaceInfo(relPath = '.'): Promise<{ root: string; base: string; rootLabel: string; branch: string | null }> {
-  const r = await fetch(`${backend}/workspace/info?path=${encodeURIComponent(relPath)}`);
+  const r = await fetch(backendUrl(`/workspace/info?path=${encodeURIComponent(relPath)}`));
   if (!r.ok) {
     const detail = await readErrorDetail(r, `workspace/info ${r.status}`);
     throw new Error(detail);
@@ -386,7 +422,7 @@ export async function getWebWorkspaceInfo(relPath = '.'): Promise<{ root: string
 }
 
 export async function getWebWorkspaceTree(depth = 4, relPath = '.'): Promise<WorkspaceNode[]> {
-  const r = await fetch(`${backend}/workspace/tree?depth=${encodeURIComponent(String(depth))}&path=${encodeURIComponent(relPath)}`);
+  const r = await fetch(backendUrl(`/workspace/tree?depth=${encodeURIComponent(String(depth))}&path=${encodeURIComponent(relPath)}`));
   if (!r.ok) {
     const detail = await readErrorDetail(r, `workspace/tree ${r.status}`);
     throw new Error(detail);
@@ -396,7 +432,7 @@ export async function getWebWorkspaceTree(depth = 4, relPath = '.'): Promise<Wor
 }
 
 export async function getWebWorkspaceDirs(relPath = '.'): Promise<Array<{ name: string; path: string }>> {
-  const r = await fetch(`${backend}/workspace/dirs?path=${encodeURIComponent(relPath)}`);
+  const r = await fetch(backendUrl(`/workspace/dirs?path=${encodeURIComponent(relPath)}`));
   if (!r.ok) {
     const detail = await readErrorDetail(r, `workspace/dirs ${r.status}`);
     throw new Error(detail);
@@ -406,7 +442,7 @@ export async function getWebWorkspaceDirs(relPath = '.'): Promise<Array<{ name: 
 }
 
 export async function getWebWorkspaceFile(filePath: string): Promise<string> {
-  const r = await fetch(`${backend}/workspace/file?path=${encodeURIComponent(filePath)}`);
+  const r = await fetch(backendUrl(`/workspace/file?path=${encodeURIComponent(filePath)}`));
   if (!r.ok) {
     const detail = await readErrorDetail(r, `workspace/file ${r.status}`);
     throw new Error(detail);
@@ -416,7 +452,7 @@ export async function getWebWorkspaceFile(filePath: string): Promise<string> {
 }
 
 export async function getWebWorkspaceSnapshot(limit = 14000, relPath = '.'): Promise<string> {
-  const r = await fetch(`${backend}/workspace/snapshot?limit=${encodeURIComponent(String(limit))}&path=${encodeURIComponent(relPath)}`);
+  const r = await fetch(backendUrl(`/workspace/snapshot?limit=${encodeURIComponent(String(limit))}&path=${encodeURIComponent(relPath)}`));
   if (!r.ok) {
     const detail = await readErrorDetail(r, `workspace/snapshot ${r.status}`);
     throw new Error(detail);

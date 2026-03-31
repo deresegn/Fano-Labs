@@ -6,8 +6,11 @@ import { EditorFeature } from './features/editor/EditorFeature';
 import {
   AIProvider,
   ProviderStatus,
+  getBackendBase,
   getAvailableModelsForProvider,
+  getCloudBackendBase,
   getProviderStatus,
+  setBackendBaseOverride,
   getWebWorkspaceDirs,
   getWebWorkspaceFile,
   getWebWorkspaceInfo,
@@ -233,6 +236,7 @@ function App() {
   const [providerTestResult, setProviderTestResult] = useState<Record<string, string>>({});
   const [providerConfigPath, setProviderConfigPath] = useState<string>('');
   const [providerAlert, setProviderAlert] = useState<string>('');
+  const [backendBaseUrl, setBackendBaseUrl] = useState<string>(getBackendBase());
   const [agentMode, setAgentMode] = useState<'chat' | 'repo_analyst' | 'code_editor'>('chat');
 
   const [rightPaneWidth, setRightPaneWidth] = useState<number>(LEFT_PANE_WIDTH);
@@ -399,7 +403,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedProvider]);
+  }, [selectedProvider, backendBaseUrl]);
 
   useEffect(() => {
     const status = providerStatusList.find((p) => p.id === selectedProvider);
@@ -892,6 +896,17 @@ function App() {
     }
   };
 
+  const applyBackendTarget = async (target: 'local' | 'cloud') => {
+    if (target === 'cloud') {
+      setBackendBaseOverride(getCloudBackendBase());
+    } else {
+      setBackendBaseOverride(null);
+    }
+    const next = getBackendBase();
+    setBackendBaseUrl(next);
+    await refreshProviders();
+  };
+
   const runMenuAction = async (action: () => void | Promise<void>) => {
     setOpenTopMenu(null);
     await action();
@@ -1226,6 +1241,25 @@ function App() {
                     <button type="button" onClick={refreshProviders}>
                       Refresh
                     </button>
+                  </div>
+                  <div className="BackendTargetRow">
+                    <span>Backend: <code>{backendBaseUrl}</code></span>
+                    <div className="BackendTargetActions">
+                      <button
+                        type="button"
+                        className={!backendBaseUrl.includes('api.fanolabs.dev') ? 'active' : ''}
+                        onClick={() => applyBackendTarget('local')}
+                      >
+                        Local Desktop
+                      </button>
+                      <button
+                        type="button"
+                        className={backendBaseUrl.includes('api.fanolabs.dev') ? 'active' : ''}
+                        onClick={() => applyBackendTarget('cloud')}
+                      >
+                        Cloud API
+                      </button>
+                    </div>
                   </div>
                   <div className="ProviderPanelRows">
                     {providerStatusList.map((p) => {
