@@ -1176,7 +1176,7 @@ function App() {
                   {renderChatMessages()}
                 </section>
               ) : (
-                <EditorFeature state={editorState} onStateChange={setEditorState} showPromptBar={false} />
+                <EditorFeature state={editorState} onStateChange={setEditorState} showPromptBar={false} showToolbar={false} />
               )}
             </main>
 

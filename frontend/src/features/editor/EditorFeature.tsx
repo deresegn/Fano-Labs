@@ -31,12 +31,14 @@ interface EditorFeatureProps {
   state: EditorState;
   onStateChange: (state: EditorState) => void;
   showPromptBar?: boolean;
+  showToolbar?: boolean;
 }
 
 export const EditorFeature: React.FC<EditorFeatureProps> = ({ 
   state, 
   onStateChange,
-  showPromptBar = true
+  showPromptBar = true,
+  showToolbar = true
 }) => {
   const editorRef = useRef<any>(null);
   
@@ -65,17 +67,19 @@ export const EditorFeature: React.FC<EditorFeatureProps> = ({
 
   return (
     <div className="EditorFeature">
-      <EditorToolbar
-        state={state}
-        onStateChange={onStateChange}
-        availableModels={availableModels}
-        isLoadingModels={isLoadingModels}
-        isGenerating={isGenerating}
-        onGenerate={handleGenerate}
-        isInlineSuggestionsEnabled={isInlineSuggestionsEnabled}
-        onToggleInlineSuggestions={setIsInlineSuggestionsEnabled}
-        showPromptBar={showPromptBar}
-      />
+      {showToolbar ? (
+        <EditorToolbar
+          state={state}
+          onStateChange={onStateChange}
+          availableModels={availableModels}
+          isLoadingModels={isLoadingModels}
+          isGenerating={isGenerating}
+          onGenerate={handleGenerate}
+          isInlineSuggestionsEnabled={isInlineSuggestionsEnabled}
+          onToggleInlineSuggestions={setIsInlineSuggestionsEnabled}
+          showPromptBar={showPromptBar}
+        />
+      ) : null}
       
       <EditorContainer>
         <MonacoEditor
