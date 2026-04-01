@@ -931,7 +931,7 @@ function App() {
   };
 
   const focusComposer = () => {
-    const el = document.querySelector('.ChatComposerRow textarea') as HTMLTextAreaElement | null;
+    const el = document.querySelector('.ComposerShell textarea') as HTMLTextAreaElement | null;
     if (el) el.focus();
   };
 
@@ -1199,40 +1199,6 @@ function App() {
                 <span>{editorState.selectedModel}</span>
                 <span>{agentMode === 'repo_analyst' ? 'Repo Analyst' : agentMode === 'code_editor' ? 'Code Editor' : 'Chat'}</span>
               </div>
-              <div className="ChatControlsRow">
-                <select value={selectedProvider} onChange={(e) => setSelectedProvider(e.target.value as AIProvider)}>
-                  {providerOptions.map((p) => {
-                    const status = providerStatusList.find((s) => s.id === p.id);
-                    const enabled = p.id === 'ollama' ? true : Boolean(status?.enabled || status?.configured || p.enabled);
-                    return (
-                      <option key={p.id} value={p.id} disabled={!enabled}>
-                        {p.id.toUpperCase()}{enabled ? '' : ' (no key)'}
-                      </option>
-                    );
-                  })}
-                </select>
-                <select
-                  value={editorState.selectedModel}
-                  onChange={(e) =>
-                    setEditorState((prev) => ({ ...prev, selectedModel: e.target.value }))
-                  }
-                >
-                  {modelOptions.length > 0 ? (
-                    modelOptions.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.name}
-                      </option>
-                    ))
-                  ) : (
-                    <option value={editorState.selectedModel}>{editorState.selectedModel}</option>
-                  )}
-                </select>
-                <select value={agentMode} onChange={(e) => setAgentMode(e.target.value as any)}>
-                  <option value="chat">Chat Mode</option>
-                  <option value="repo_analyst">Repo Analyst</option>
-                  <option value="code_editor">Code Editor</option>
-                </select>
-              </div>
               {providerAlert ? <div className="ProviderAlert">{providerAlert}</div> : null}
               {isProviderPanelOpen ? (
                 <div className="ProviderPanel">
@@ -1301,7 +1267,7 @@ function App() {
                   </div>
                 </div>
               ) : null}
-              <div className="ChatComposerRow">
+              <div className="ComposerShell">
                 <textarea
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
@@ -1319,13 +1285,49 @@ function App() {
                     }
                   }}
                 />
-                <button
-                  type="button"
-                  onClick={sendChatMessage}
-                  disabled={!chatInput.trim() || isGenerating}
-                >
-                  Send
-                </button>
+                <div className="ComposerFooter">
+                  <div className="ComposerSelects">
+                    <select value={selectedProvider} onChange={(e) => setSelectedProvider(e.target.value as AIProvider)}>
+                      {providerOptions.map((p) => {
+                        const status = providerStatusList.find((s) => s.id === p.id);
+                        const enabled = p.id === 'ollama' ? true : Boolean(status?.enabled || status?.configured || p.enabled);
+                        return (
+                          <option key={p.id} value={p.id} disabled={!enabled}>
+                            {p.id.toUpperCase()}{enabled ? '' : ' (no key)'}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <select
+                      value={editorState.selectedModel}
+                      onChange={(e) =>
+                        setEditorState((prev) => ({ ...prev, selectedModel: e.target.value }))
+                      }
+                    >
+                      {modelOptions.length > 0 ? (
+                        modelOptions.map((model) => (
+                          <option key={model.id} value={model.id}>
+                            {model.name}
+                          </option>
+                        ))
+                      ) : (
+                        <option value={editorState.selectedModel}>{editorState.selectedModel}</option>
+                      )}
+                    </select>
+                    <select value={agentMode} onChange={(e) => setAgentMode(e.target.value as any)}>
+                      <option value="chat">Chat Mode</option>
+                      <option value="repo_analyst">Repo Analyst</option>
+                      <option value="code_editor">Code Editor</option>
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={sendChatMessage}
+                    disabled={!chatInput.trim() || isGenerating}
+                  >
+                    Send
+                  </button>
+                </div>
               </div>
               <div className="StatusLine">
                 <span>{getProjectName(workspacePath)}</span>

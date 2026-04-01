@@ -436,7 +436,7 @@
 .AgentStatusLine {
   display: flex;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .AgentStatusLine span {
@@ -452,47 +452,77 @@
   white-space: nowrap;
 }
 
-.ChatControlsRow {
-  display: grid;
-  grid-template-columns: minmax(110px, 1fr) minmax(140px, 1.2fr) minmax(120px, 1fr);
+.ComposerShell {
+  border: 1px solid #394462;
+  border-radius: 10px;
+  background: #1d2436;
+  overflow: hidden;
+}
+
+.ComposerShell textarea {
+  width: 100%;
+  min-height: 96px;
+  max-height: 220px;
+  resize: vertical;
+  padding: 12px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #edf2ff;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.ComposerShell textarea::placeholder {
+  color: #8e9fc7;
+}
+
+.ComposerFooter {
+  border-top: 1px solid #303952;
+  padding: 8px;
+  display: flex;
   gap: 8px;
   align-items: center;
-  margin-bottom: 8px;
+  justify-content: space-between;
 }
 
-.ChatComposerRow {
-  display: grid;
-  grid-template-columns: 1fr 72px;
-  gap: 8px;
-  align-items: end;
+.ComposerSelects {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
 }
 
-.ChatControlsRow select,
-.ChatComposerRow textarea,
-.ChatComposerRow button {
-  border-radius: 6px;
+.ComposerSelects select {
+  min-width: 0;
+  flex: 1;
+  height: 30px;
+  padding: 0 8px;
   border: 1px solid #394462;
+  border-radius: 6px;
   background: #232a3d;
   color: #edf2ff;
   font-size: 12px;
 }
 
-.ChatControlsRow select,
-.ChatComposerRow button {
-  height: 36px;
-  padding: 0 10px;
-}
-
-.ChatComposerRow textarea {
-  min-height: 72px;
-  max-height: 180px;
-  resize: none;
-  padding: 10px;
-  line-height: 1.45;
-}
-
-.ChatComposerRow button {
+.ComposerFooter button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid #44527a;
+  border-radius: 6px;
+  background: #2a3657;
+  color: #edf2ff;
+  font-size: 12px;
   cursor: pointer;
+}
+
+.ComposerFooter button:hover {
+  background: #33416a;
+}
+
+.ComposerFooter button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .ProviderPanel {
@@ -747,8 +777,17 @@
   .ChatInputRow {
     grid-template-columns: 1fr;
   }
-  .ChatControlsRow,
-  .ChatComposerRow {
-    grid-template-columns: 1fr;
+  .ComposerFooter {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ComposerSelects {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .ComposerFooter button {
+    width: 100%;
   }
 }
