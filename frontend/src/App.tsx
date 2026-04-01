@@ -310,7 +310,7 @@ function App() {
         const found = statusList.find((s) => s.id === id);
         return {
           id,
-          enabled: id === 'ollama' ? true : Boolean(found?.enabled || found?.configured),
+          enabled: Boolean(found?.enabled || found?.configured),
         };
       });
       setProviderOptions(nextOptions);
@@ -1290,7 +1290,7 @@ function App() {
                     <select value={selectedProvider} onChange={(e) => setSelectedProvider(e.target.value as AIProvider)}>
                       {providerOptions.map((p) => {
                         const status = providerStatusList.find((s) => s.id === p.id);
-                        const enabled = p.id === 'ollama' ? true : Boolean(status?.enabled || status?.configured || p.enabled);
+                        const enabled = Boolean(status?.enabled || status?.configured || p.enabled);
                         return (
                           <option key={p.id} value={p.id} disabled={!enabled}>
                             {p.id.toUpperCase()}{enabled ? '' : ' (no key)'}

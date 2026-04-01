@@ -31,6 +31,7 @@ const OLLAMA_URLS = [
   'http://127.0.0.1:11434',
   'http://localhost:11434',
 ].filter(Boolean) as string[]
+const OLLAMA_ENABLED = String(process.env.OLLAMA_ENABLED || 'true').toLowerCase() !== 'false'
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || ''
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || ''
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''
@@ -199,12 +200,15 @@ function isConfigured(provider: Provider): boolean {
 
 function providerStatus(provider: Provider): ProviderStatus {
   if (provider === 'ollama') {
+    const enabled = OLLAMA_ENABLED
     return {
       id: 'ollama',
-      enabled: true,
-      configured: true,
+      enabled,
+      configured: enabled,
       reachable: null,
-      detail: 'Local provider. Use Ollama running on this machine.',
+      detail: enabled
+        ? 'Local provider. Use Ollama running on this machine.'
+        : 'Ollama is disabled by OLLAMA_ENABLED=false in backend environment.',
     }
   }
 
@@ -337,6 +341,7 @@ async function generateWithGemini(prompt: string, model: string): Promise<string
 async function testProvider(provider: Provider): Promise<{ ok: boolean; detail: string }> {
   try {
     if (provider === 'ollama') {
+      if (!OLLAMA_ENABLED) return { ok: false, detail: 'Ollama is disabled (OLLAMA_ENABLED=false).' }
       const upstream = await callOllama('/api/tags')
       const j: any = await upstream.json()
       const count = Array.isArray(j?.models) ? j.models.length : 0
@@ -420,6 +425,7 @@ app.get(['/models', '/api/models', '/v1/models'], async (_req, res) => {
     } else if (provider === 'gemini') {
       models = GEMINI_API_KEY ? DEFAULT_MODELS.gemini : []
     } else {
+      if (!OLLAMA_ENABLED) return res.json({ models: [] })
       const upstream = await callOllama('/api/tags')
       const data: any = await upstream.json()
       models = Array.isArray(data?.models) ? data.models.map((m: any) => m.name).filter(Boolean) : []
@@ -607,6 +613,13 @@ async function generateHandler(req: express.Request, res: express.Response) {
       return res.json({ response, model: selectedModel, provider })
     }
 
+    if (!OLLAMA_ENABLED) {
+      return res.status(503).json({
+        error: 'ollama_disabled',
+        detail: 'Ollama is disabled (OLLAMA_ENABLED=false). Enable it or switch provider.',
+      })
+    }
+
     const installedModels = await listInstalledModels()
     const selectedModel = pickModel(model, installedModels)
     if (!selectedModel) {
@@ -659,6 +672,15 @@ app.post(['/generate/stream', '/api/generate/stream', '/v1/generate/stream'], as
       if (provider === 'gemini') response = await generateWithGemini(fullPrompt, selectedModel)
       res.write(`data: ${JSON.stringify({ delta: response })}\n\n`)
       res.write('event: done\ndata: {}\n\n')
+      res.end()
+      return
+    }
+
+    if (!OLLAMA_ENABLED) {
+      res.write(`event: error\ndata: ${JSON.stringify({
+        error: 'ollama_disabled',
+        detail: 'Ollama is disabled (OLLAMA_ENABLED=false). Enable it or switch provider.',
+      })}\n\n`)
       res.end()
       return
     }
