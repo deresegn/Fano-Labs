@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
     "dev:backend": "cd backend && npm run dev",
-    "dev:frontend": "cd frontend && vite",
+    "dev:frontend": "vite --root frontend",
     "build": "npm run build:frontend",
-    "build:frontend": "cd frontend && vite build",
+    "build:frontend": "vite build --root frontend",
     "build:backend": "cd backend && npm run build",
     "preview": "vite preview",
     "start": "node dist/server.js",

@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { GenerateRequest, GenerateResponse } from '../../shared/types';
-import { generateCode, streamGenerate } from '../api';
+import { streamGenerate } from '../api';
 import './ChatPanel.css';
 
 interface ChatMessage {
@@ -19,11 +18,7 @@ interface ChatPanelProps {
 }
 
 const ChatPanel: React.FC<ChatPanelProps> = ({ 
-  isOpen, 
-  onToggle, 
-  currentCode, 
-  currentLanguage, 
-  selectedModel 
+  isOpen, onToggle, currentCode, currentLanguage, selectedModel 
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -55,38 +50,47 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       timestamp: new Date()
     };
 
+    const userText = inputMessage;
     setMessages(prev => [...prev, userMessage]);
     setInputMessage('');
     setIsGenerating(true);
 
     try {
-      // Start a new assistant message and append deltas as they arrive
       const msgId = (Date.now() + 1).toString();
-      setMessages(prev => [...prev, { id: msgId, type: 'assistant', content: '', timestamp: new Date() }]);
+      let hasStarted = false;
 
       await streamGenerate(
-        { prompt: inputMessage, model: selectedModel, language: currentLanguage },
+        { prompt: userText, model: selectedModel, language: currentLanguage },
         (delta) => {
-          setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: (m.content || '') + delta } : m));
+          if (!hasStarted) {
+            hasStarted = true;
+            setMessages(prev => [...prev, { id: msgId, type: 'assistant', content: delta, timestamp: new Date() }]);
+          } else {
+            setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: (m.content || '') + delta } : m));
+          }
         }
       );
+
+      if (!hasStarted) {
+        setMessages(prev => [...prev, {
+          id: msgId, type: 'assistant',
+          content: 'No response was received. Please try again.',
+          timestamp: new Date()
+        }]);
+      }
     } catch (error) {
       console.error('Failed to generate response:', error);
-      
-      const errorMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(), type: 'assistant',
         content: 'Sorry, I encountered an error while processing your request. Please try again.',
         timestamp: new Date()
-      };
-
-      setMessages(prev => [...prev, errorMessage]);
+      }]);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -100,9 +104,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   if (!isOpen) {
     return (
       <div className="ChatPanel-toggle">
-        <button onClick={onToggle} className="ChatPanel-toggle-btn">
-          💬
-        </button>
+        <button onClick={onToggle} className="ChatPanel-toggle-btn">Chat</button>
       </div>
     );
   }
@@ -111,11 +113,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     <div className="ChatPanel">
       <div className="ChatPanel-header">
         <h3>AI Chat</h3>
-        <button onClick={onToggle} className="ChatPanel-close-btn">
-          ×
-        </button>
+        <button onClick={onToggle} className="ChatPanel-close-btn">x</button>
       </div>
-      
       <div className="ChatPanel-messages">
         {messages.map((message) => (
           <div key={message.id} className={`ChatPanel-message ${message.type}`}>
@@ -135,21 +134,18 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           <div className="ChatPanel-message assistant">
             <div className="ChatPanel-message-content">
               <div className="ChatPanel-typing">
-                <span></span>
-                <span></span>
-                <span></span>
+                <span></span><span></span><span></span>
               </div>
             </div>
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
-      
       <div className="ChatPanel-input">
         <textarea
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
-          onKeyPress={handleKeyPress}
+          onKeyDown={handleKeyDown}
           placeholder="Ask me anything about your code... (Enter to send, Shift+Enter for new line)"
           disabled={isGenerating}
           className="ChatPanel-textarea"
@@ -166,4 +162,4 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   );
 };
 
-export default ChatPanel; 
+export default ChatPanel;

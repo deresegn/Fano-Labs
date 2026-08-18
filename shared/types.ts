@@ -14,7 +14,7 @@ export interface GenerateResponse {
 export interface ModelConfig {
   id: string;
   name: string;
-  description: string;
+  description?: string;
   temperature?: number;
   maxTokens?: number;
 }

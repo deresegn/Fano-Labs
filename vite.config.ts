@@ -17,7 +17,7 @@ export default defineConfig({
     host: true,
   },
   build: {
-    outDir: 'frontend/dist',
+    outDir: 'dist',
     sourcemap: true,
     rollupOptions: {
       output: {

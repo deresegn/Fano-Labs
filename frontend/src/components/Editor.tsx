@@ -80,7 +80,7 @@ const Editor: React.FC<EditorProps> = ({ state, onStateChange }) => {
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       handleGenerate();
@@ -147,7 +147,7 @@ const Editor: React.FC<EditorProps> = ({ state, onStateChange }) => {
             placeholder="Ask AI to generate code... (Ctrl/Cmd + Enter to generate)"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyDown}
             className="Editor-prompt"
             disabled={isGenerating}
           />

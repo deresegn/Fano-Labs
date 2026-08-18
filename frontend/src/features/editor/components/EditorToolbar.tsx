@@ -27,7 +27,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
 }) => {
   const [prompt, setPrompt] = useState('');
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       handleGenerate();
@@ -101,7 +101,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
             placeholder="Ask AI to generate code... (Ctrl/Cmd + Enter to generate)"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyDown}
             className="EditorToolbar-prompt"
             disabled={isGenerating}
           />

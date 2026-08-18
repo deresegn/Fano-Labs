@@ -11,14 +11,12 @@ interface InlineSuggestionsProps {
 }
 
 const InlineSuggestions: React.FC<InlineSuggestionsProps> = ({
-  editor,
-  currentCode,
-  currentLanguage,
-  selectedModel,
-  isEnabled
+  editor, currentCode, currentLanguage, selectedModel, isEnabled
 }) => {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSuggestionRef = useRef<string>('');
+  const suggestionTextRef = useRef<string>('');
+  const suggestionRangeRef = useRef<any>(null);
 
   useEffect(() => {
     if (!editor || !isEnabled) {
@@ -27,44 +25,30 @@ const InlineSuggestions: React.FC<InlineSuggestionsProps> = ({
     }
 
     const handleCursorChange = () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-
-      timeoutRef.current = setTimeout(() => {
-        generateInlineSuggestion();
-      }, 1000);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(generateInlineSuggestion, 1000);
     };
 
     const handleContentChange = () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-
-      timeoutRef.current = setTimeout(() => {
-        generateInlineSuggestion();
-      }, 2000);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(generateInlineSuggestion, 2000);
     };
 
     editor.onDidChangeCursorPosition(handleCursorChange);
     editor.onDidChangeModelContent(handleContentChange);
 
     return () => {
-      editor.offDidChangeCursorPosition(handleCursorChange);
-      editor.offDidChangeModelContent(handleContentChange);
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
+      editor.offDidChangeCursorPosition?.(handleCursorChange);
+      editor.offDidChangeModelContent?.(handleContentChange);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, [editor, isEnabled, currentCode, currentLanguage, selectedModel]);
 
   const generateInlineSuggestion = async () => {
     if (!editor || !isEnabled) return;
-
     const position = editor.getPosition();
     const lineContent = editor.getModel().getLineContent(position.lineNumber);
     const wordBeforeCursor = lineContent.substring(0, position.column - 1).split(/\s+/).pop() || '';
-
     if (wordBeforeCursor.length < 3) return;
 
     try {
@@ -74,9 +58,7 @@ const InlineSuggestions: React.FC<InlineSuggestionsProps> = ({
         context: currentCode,
         model: selectedModel
       };
-
       const response = await generateCode(request);
-      
       if (response.code && response.code !== lastSuggestionRef.current) {
         lastSuggestionRef.current = response.code;
         showInlineSuggestion(response.code, position);
@@ -88,71 +70,58 @@ const InlineSuggestions: React.FC<InlineSuggestionsProps> = ({
 
   const showInlineSuggestion = (suggestion: string, position: any) => {
     if (!editor) return;
-
+    clearInlineSuggestions();
     const range = {
       startLineNumber: position.lineNumber,
       startColumn: position.column,
       endLineNumber: position.lineNumber,
       endColumn: position.column
     };
-
-    const decoration = editor.deltaDecorations([], [{
+    suggestionTextRef.current = suggestion;
+    suggestionRangeRef.current = range;
+    editor.deltaDecorations([], [{
       range,
       options: {
         after: {
           content: suggestion,
+          inlineClassName: 'inline-suggestion-ghost',
           color: '#888888',
           fontStyle: 'italic'
         }
       }
     }]);
-
-    // Store decoration ID for later removal
-    (editor as any).inlineSuggestionDecoration = decoration;
   };
 
   const clearInlineSuggestions = () => {
     if (!editor) return;
-
-    if ((editor as any).inlineSuggestionDecoration) {
-      editor.deltaDecorations((editor as any).inlineSuggestionDecoration, []);
-      (editor as any).inlineSuggestionDecoration = null;
-    }
+    editor.deltaDecorations([], []);
+    suggestionTextRef.current = '';
+    suggestionRangeRef.current = null;
   };
 
   const acceptSuggestion = () => {
-    if (!editor || !(editor as any).inlineSuggestionDecoration) return;
-
-    const decorations = editor.getModel().getDecorationsInRange((editor as any).inlineSuggestionDecoration[0]);
-    if (decorations.length > 0) {
-      const decoration = decorations[0];
-      const suggestion = decoration.options.after?.content || '';
-      
-      if (suggestion) {
-        const position = editor.getPosition();
-        editor.executeEdits('inline-suggestion', [{
-          range: {
-            startLineNumber: position.lineNumber,
-            startColumn: position.column,
-            endLineNumber: position.lineNumber,
-            endColumn: position.column
-          },
-          text: suggestion
-        }]);
-      }
-    }
-
+    if (!editor || !suggestionTextRef.current) return;
+    const suggestion = suggestionTextRef.current;
+    const range = suggestionRangeRef.current || editor.getPosition();
+    editor.executeEdits('inline-suggestion', [{
+      range: {
+        startLineNumber: range.startLineNumber,
+        startColumn: range.startColumn,
+        endLineNumber: range.endLineNumber,
+        endColumn: range.endColumn
+      },
+      text: suggestion
+    }]);
     clearInlineSuggestions();
   };
 
-  // Expose acceptInlineSuggestion method on editor instance
   useEffect(() => {
     if (editor) {
       (editor as any).acceptInlineSuggestion = acceptSuggestion;
     }
-  }, [editor]);
+  });
 
-  return null; // This component doesn't render anything directly
+  return null;
 };
 
-export default InlineSuggestions; 
+export default InlineSuggestions;

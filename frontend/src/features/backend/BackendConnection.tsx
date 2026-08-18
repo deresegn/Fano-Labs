@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { checkHealth } from '../../api';
 import './BackendConnection.css';
 
@@ -9,19 +9,20 @@ interface BackendConnectionProps {
 export const BackendConnection: React.FC<BackendConnectionProps> = ({ children }) => {
   const [connectionState, setConnectionState] = useState<'checking' | 'connected' | 'failed'>('checking');
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const connectionStateRef = useRef(connectionState);
+
+  useEffect(() => {
+    connectionStateRef.current = connectionState;
+  }, [connectionState]);
 
   useEffect(() => {
     let isMounted = true;
     let checkCount = 0;
-    
+
     const checkBackendHealth = async () => {
       try {
-        console.log('🔍 Checking backend health... (attempt', checkCount + 1, ')');
         const isHealthy = await checkHealth();
-        console.log('✅ Backend health check result:', isHealthy);
-        
         if (!isMounted) return;
-        
         if (isHealthy) {
           setConnectionState('connected');
           setErrorMessage('');
@@ -30,20 +31,16 @@ export const BackendConnection: React.FC<BackendConnectionProps> = ({ children }
           setErrorMessage('Backend server is not responding');
         }
       } catch (error) {
-        console.error('❌ Backend health check failed:', error);
         if (!isMounted) return;
-        
         setConnectionState('failed');
         setErrorMessage(error instanceof Error ? error.message : 'Unknown error');
       }
     };
 
-    // Initial check
     checkBackendHealth();
 
-    // Check every 10 seconds, but only if not connected and less than 3 attempts
     const interval = setInterval(() => {
-      if (connectionState !== 'connected' && checkCount < 3) {
+      if (connectionStateRef.current !== 'connected' && checkCount < 3) {
         checkCount++;
         checkBackendHealth();
       }
@@ -53,7 +50,7 @@ export const BackendConnection: React.FC<BackendConnectionProps> = ({ children }
       isMounted = false;
       clearInterval(interval);
     };
-  }, []); // Remove connectionState from dependencies to prevent re-runs
+  }, []);
 
   const handleRetry = () => {
     setConnectionState('checking');
@@ -73,32 +70,26 @@ export const BackendConnection: React.FC<BackendConnectionProps> = ({ children }
     return (
       <div className="BackendConnection-error">
         <div className="BackendConnection-error-content">
-          <h2>⚠️ Backend Connection Failed</h2>
+          <h2>Backend Connection Failed</h2>
           <p>The FANO-LABS backend server is not running or not accessible.</p>
-          
           {errorMessage && (
             <div className="BackendConnection-error-details">
               <strong>Error:</strong> {errorMessage}
             </div>
           )}
-          
           <div className="BackendConnection-steps">
             <h3>To fix this:</h3>
             <ol>
               <li>Open Terminal</li>
-              <li>Navigate to your project: <code>cd /Users/dawitderessegne/FANO-LABS</code></li>
+              <li>Navigate to your project: <code>cd Fano-Labs</code></li>
               <li>Start the backend: <code>npm run dev:backend</code></li>
               <li>Make sure Ollama is running: <code>ollama run codellama:7b-code</code></li>
               <li>Click "Check Again" below</li>
             </ol>
           </div>
-          
           <div className="BackendConnection-actions">
-            <button 
-              onClick={handleRetry}
-              className="BackendConnection-retry-btn"
-            >
-              🔍 Check Again
+            <button onClick={handleRetry} className="BackendConnection-retry-btn">
+              Check Again
             </button>
           </div>
         </div>
@@ -111,4 +102,4 @@ export const BackendConnection: React.FC<BackendConnectionProps> = ({ children }
       {children}
     </div>
   );
-}; 
+};
