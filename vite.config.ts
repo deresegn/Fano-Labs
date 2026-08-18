@@ -4,8 +4,9 @@ import monaco from 'vite-plugin-monaco-editor';
 import path from 'path';
 
 export default defineConfig({
+  root: './frontend',
   base: './',
-  plugins: [react(), monaco()],
+  plugins: [react()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './frontend/src'),
